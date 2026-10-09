@@ -365,10 +365,18 @@ func (s *Session) invByID(id int32, tx *world.Tx) (*inventory.Inventory, bool) {
 // it will be shown to the client.
 func (s *Session) Disconnect(message string) {
 	if s != Nop {
-		_ = s.conn.WritePacketImmediate(&packet.Disconnect{
+		pk := &packet.Disconnect{
 			HideDisconnectionScreen: message == "",
 			Message:                 message,
-		})
+		}
+		if immediate, ok := s.conn.(interface {
+			WritePacketImmediate(...packet.Packet) error
+		}); ok {
+			_ = immediate.WritePacketImmediate(pk)
+		} else {
+			_ = s.conn.WritePacket(pk)
+			_ = s.conn.Flush()
+		}
 	}
 }
 
