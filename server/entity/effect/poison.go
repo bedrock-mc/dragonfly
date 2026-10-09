@@ -16,7 +16,7 @@ type poison struct {
 // Apply ...
 func (poison) Apply(e world.Entity, eff Effect) {
 	interval := max(25>>(eff.Level()-1), 1)
-	if eff.Tick()%interval == 0 {
+	if eff.periodicPulse(interval) {
 		if l, ok := e.(living); ok && l.Health() > 1 {
 			l.Hurt(1, PoisonDamageSource{})
 		}

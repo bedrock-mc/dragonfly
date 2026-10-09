@@ -1,6 +1,7 @@
 package entity
 
 import (
+	"fmt"
 	"github.com/df-mc/dragonfly/server/block"
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/entity/effect"
@@ -387,4 +388,59 @@ func TestAnimalPhysicsReadsInitializedNeighbor(t *testing.T) {
 			t.Fatalf("cow crossed wall before neighbor initialization: x=%v", x)
 		}
 	})
+}
+
+func TestAnimalFiniteEffectPulsesUseRemainingDuration(t *testing.T) {
+	for name, spec := range map[string]struct {
+		typ   effect.LastingType
+		base  int
+		delta float64
+	}{
+		"poison": {effect.Poison, 25, -1}, "regeneration": {effect.Regeneration, 50, 1}, "wither": {effect.Wither, 40, -1},
+	} {
+		for _, level := range []int{1, 2, 7} {
+			for _, reopen := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/level%d/reopen%v", name, level, reopen), func(t *testing.T) {
+					w := world.Config{Synchronous: true, Entities: DefaultRegistry}.New()
+					defer w.Close()
+					w.Do(func(tx *world.Tx) {
+						a := tx.AddEntity(NewCow(world.EntitySpawnOpts{Position: mgl64.Vec3{0, 10, 0}})).(*Animal)
+						a.Hurt(3, VoidDamageSource{})
+						a.data.Age = time.Second
+						interval := max(spec.base>>(level-1), 1)
+						offset := min(15, interval-1)
+						e := effect.New(spec.typ, level, time.Duration(interval+offset)*time.Second/20)
+						if reopen {
+							e = e.WithElapsedTicks(interval)
+						}
+						a.AddEffect(e)
+						if reopen {
+							encoded, err := nbt.Marshal(CowType.EncodeNBT(a.data))
+							if err != nil {
+								t.Fatal(err)
+							}
+							var saved map[string]any
+							if err = nbt.Unmarshal(encoded, &saved); err != nil {
+								t.Fatal(err)
+							}
+							data := world.EntityData{}
+							CowType.DecodeNBT(saved, &data)
+							a = &Animal{Ent: Open(tx, a.H(), &data)}
+						}
+						for range offset {
+							a.state().effects.Tick(a, tx)
+							a.data.Age += time.Second / 20
+							if a.Health() != 7 {
+								t.Fatalf("pulse before remaining duration reached interval: health=%v", a.Health())
+							}
+						}
+						a.state().effects.Tick(a, tx)
+						if a.Health() != 7+spec.delta {
+							t.Fatalf("missing pulse at remaining interval: health=%v", a.Health())
+						}
+					})
+				})
+			}
+		}
+	}
 }
