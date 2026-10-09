@@ -182,3 +182,47 @@ func TestAnimalEnvironmentalDamageAndBabyEmbeddedBounds(t *testing.T) {
 		}
 	})
 }
+
+func TestAnimalStandingOnMagma(t *testing.T) {
+	w := world.Config{Synchronous: true, Entities: DefaultRegistry}.New()
+	defer w.Close()
+	w.Do(func(tx *world.Tx) {
+		tx.SetBlock(cube.Pos{0, 9, 0}, block.Magma{}, nil)
+		a := tx.AddEntity(NewCow(world.EntitySpawnOpts{Position: mgl64.Vec3{.5, 10, .5}})).(*Animal)
+		a.Tick(tx, 1)
+		if a.Health() >= a.MaxHealth() {
+			t.Fatal("standing on magma caused no damage")
+		}
+	})
+}
+
+func TestAnimalPortalTickEndsBeforeFireDamage(t *testing.T) {
+	var source, destination *world.World
+	source = world.Config{Synchronous: true, Entities: DefaultRegistry, PortalDestination: func(dim world.Dimension) *world.World { return destination }}.New()
+	defer source.Close()
+	destination = world.Config{Synchronous: true, Dim: world.Nether, Entities: DefaultRegistry}.New()
+	defer destination.Close()
+	sourcePos, targetPos := cube.Pos{80, 64, 80}, cube.Pos{10, 64, 10}
+	destination.Do(func(tx *world.Tx) { buildActivePortal(tx, targetPos) })
+	var handle *world.EntityHandle
+	source.Do(func(tx *world.Tx) {
+		buildActivePortal(tx, sourcePos)
+		a := tx.AddEntity(NewCow(world.EntitySpawnOpts{Position: sourcePos.Vec3Middle()})).(*Animal)
+		handle = a.H()
+		a.state().PortalTravelComputer().Instantaneous = func(world.Dimension, world.Dimension) bool { return true }
+		a.SetOnFire(time.Second + time.Second/20)
+		a.Tick(tx, 1)
+		// The destination owner may run after this transaction; capture no shared state here.
+	})
+	// Wait for destination ownership before observing persistent state.
+	waitForEntityWorld(t, handle, destination)
+	var health float64
+	destination.Do(func(tx *world.Tx) {
+		for e := range tx.Entities() {
+			health = e.(*Animal).Health()
+		}
+	})
+	if health != 10 {
+		t.Fatalf("terminal portal tick applied source-world fire damage: health=%v", health)
+	}
+}

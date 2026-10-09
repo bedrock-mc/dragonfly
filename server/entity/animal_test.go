@@ -109,3 +109,38 @@ func TestAnimalDamageImmunityUsesSimulationTime(t *testing.T) {
 		}
 	})
 }
+
+func TestAnimalMutationPersistsWithoutTick(t *testing.T) {
+	dir := t.TempDir()
+	open := func() *world.World {
+		db, err := mcdb.Open(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return world.Config{Synchronous: true, Provider: db, Entities: entity.DefaultRegistry}.New()
+	}
+	w := open()
+	w.Do(func(tx *world.Tx) { tx.AddEntity(entity.NewCow(world.EntitySpawnOpts{Position: mgl64.Vec3{0, 10, 0}})) })
+	w.Close()
+	w = open()
+	w.Do(func(tx *world.Tx) {
+		tx.Block(cube.Pos{0, 10, 0})
+		for e := range tx.Entities() {
+			a := e.(*entity.Animal)
+			a.Hurt(3, entity.AttackDamageSource{})
+			a.SetSpeed(0)
+		}
+	})
+	w.Close()
+	w = open()
+	defer w.Close()
+	w.Do(func(tx *world.Tx) {
+		tx.Block(cube.Pos{0, 10, 0})
+		for e := range tx.Entities() {
+			a := e.(*entity.Animal)
+			if a.Health() != 7 || a.Speed() != 0 {
+				t.Fatalf("unticked saved mutation lost: health=%v speed=%v", a.Health(), a.Speed())
+			}
+		}
+	})
+}
