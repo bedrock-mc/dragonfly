@@ -304,3 +304,47 @@ func TestGenerationAdmissionChainUsesOwnerWithoutRecursion(t *testing.T) {
 		}
 	}
 }
+
+// generationSearchBlock installs a search target at generation initialization.
+type generationSearchBlock struct {
+	NopHandler
+	block Block
+}
+
+// HandleChunkGenerate writes the target without scheduling block simulation.
+func (h generationSearchBlock) HandleChunkGenerate(tx *Tx, pos ChunkPos) {
+	tx.SetBlock(cube.Pos{int(pos[0]) * 16, 10, int(pos[1]) * 16}, h.block, &SetOpts{DisableBlockUpdates: true, DisableRedstoneUpdates: true})
+}
+
+func TestLoadedTerrainSearchInitializesGeneratedColumn(t *testing.T) {
+	for _, mode := range []string{"block", "search"} {
+		t.Run(mode, func(t *testing.T) {
+			initialized, ticked := false, false
+			b := generationScheduledBlock{&initialized, &ticked}
+			registry := NewBlockRegistry()
+			registry.RegisterBlockState(BlockState{Name: "test:generation_scheduled", Properties: map[string]any{}})
+			registry.RegisterBlock(b)
+			registry.Finalize()
+			w := Config{Synchronous: true, Blocks: registry}.New()
+			defer w.Close()
+			w.Handle(generationSearchBlock{block: b})
+			w.Do(func(tx *Tx) {
+				tx.chunk(ChunkPos{})
+				if mode == "block" {
+					got, ok := tx.BlockLoaded(cube.Pos{0, 10, 0})
+					if !ok || registry.BlockRuntimeID(got) != registry.BlockRuntimeID(b) {
+						t.Fatal("loaded block read missed initialized terrain")
+					}
+				} else {
+					found := false
+					for pos := range tx.BlocksWithin(cube.Pos{0, 10, 0}, 1, b) {
+						found = found || pos == (cube.Pos{0, 10, 0})
+					}
+					if !found {
+						t.Fatal("loaded terrain search missed initialized target")
+					}
+				}
+			})
+		})
+	}
+}

@@ -11,7 +11,7 @@ import (
 )
 
 // blocksWithin implements Tx.BlocksWithin. It must only be called during a transaction.
-func (w *World) blocksWithin(pos cube.Pos, radius int, blocks ...Block) iter.Seq[cube.Pos] {
+func (w *World) blocksWithin(tx *Tx, pos cube.Pos, radius int, blocks ...Block) iter.Seq[cube.Pos] {
 	return func(yield func(cube.Pos) bool) {
 		if radius <= 0 || len(blocks) == 0 {
 			return
@@ -33,6 +33,7 @@ func (w *World) blocksWithin(pos cube.Pos, radius int, blocks ...Block) iter.Seq
 				chunkPos := ChunkPos{chunkX, chunkZ}
 				var c *chunk.Chunk
 				if col, ok := w.chunks[chunkPos]; ok {
+					tx.initializeColumn(chunkPos, col)
 					c = col.Chunk
 				} else {
 					col, err := w.conf.Provider.LoadColumn(chunkPos, w.conf.Dim)

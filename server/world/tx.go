@@ -141,7 +141,7 @@ func (tx *Tx) BlockLoaded(pos cube.Pos) (Block, bool) {
 // horizontal square radius around pos. Chunks not in memory are read from the world save; missing chunks are
 // skipped, not generated. Only the primary block layer is searched and blocks are matched by their state alone.
 func (tx *Tx) BlocksWithin(pos cube.Pos, radius int, blocks ...Block) iter.Seq[cube.Pos] {
-	return tx.World().blocksWithin(pos, radius, blocks...)
+	return tx.World().blocksWithin(tx, pos, radius, blocks...)
 }
 
 // Liquid attempts to return a Liquid block at the position passed. This
