@@ -16,7 +16,7 @@ func TestMovedActorSurvivesSourceColumnSave(t *testing.T) {
 	empty := func() *chunk.Column {
 		return &chunk.Column{Chunk: chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())}
 	}
-	actor := chunk.Entity{ID: 42, Data: map[string]any{"identifier": "minecraft:cow"}}
+	actor := chunk.Entity{ID: 42, Data: map[string]any{"identifier": "minecraft:item"}}
 	original := empty()
 	original.Entities = []chunk.Entity{actor}
 	if err := db.StoreColumn(source, world.Overworld, original); err != nil {

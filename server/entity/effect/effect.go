@@ -85,13 +85,6 @@ func (e Effect) WithoutParticles() Effect {
 	return e
 }
 
-// WithElapsedTicks restores the number of completed applications without advancing
-// the remaining duration. Negative values are treated as a fresh effect.
-func (e Effect) WithElapsedTicks(ticks int) Effect {
-	e.tick = max(ticks, 0)
-	return e
-}
-
 // ParticlesHidden returns true if the Effect had its particles hidden by calling WithoutParticles.
 func (e Effect) ParticlesHidden() bool {
 	return e.particlesHidden
