@@ -76,12 +76,20 @@ func (tx *Tx) ChunkLastTick(pos ChunkPos) (int64, bool) {
 // their newly admitted columns are initialized after that callback returns.
 func (tx *Tx) readChunk(pos ChunkPos) *Column {
 	c := tx.chunk(pos)
+	tx.finishChunkAdmission(pos, c)
+	return c
+}
+
+// finishChunkAdmission completes pending initialization outside generation callbacks.
+func (tx *Tx) finishChunkAdmission(pos ChunkPos, c *Column) {
+	if c == nil {
+		return
+	}
 	pending := c.generated && !tx.generating
 	tx.initializeColumn(pos, c)
 	if pending {
 		(ticker{}).dispatchGeneration(tx)
 	}
-	return c
 }
 
 // initializeColumn invokes the optional handler once, on the same owner
@@ -96,4 +104,21 @@ func (tx *Tx) initializeColumn(pos ChunkPos, c *Column) {
 	if h, ok := tx.World().Handler().(GenerationHandler); ok {
 		h.HandleChunkGenerate(tx, pos)
 	}
+}
+
+// deliverColumn initializes terrain before handing it to a loader callback.
+// Delivery requested within generation is deferred until that callback returns.
+func (tx *Tx) deliverColumn(pos ChunkPos, c *Column, callback chunkCallback) {
+	if c != nil && tx.generating {
+		tx.Defer(func(next *Tx) {
+			if current := next.World().chunks[pos]; current != c {
+				callback(next, nil)
+				return
+			}
+			next.deliverColumn(pos, c, callback)
+		})
+		return
+	}
+	tx.finishChunkAdmission(pos, c)
+	callback(tx, c)
 }

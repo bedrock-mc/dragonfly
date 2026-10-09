@@ -1,6 +1,7 @@
 package world
 
 import (
+	"fmt"
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/world/chunk"
 	"math/rand/v2"
@@ -346,5 +347,68 @@ func TestLoadedTerrainSearchInitializesGeneratedColumn(t *testing.T) {
 				}
 			})
 		})
+	}
+}
+
+// initializedTerrainViewer records the actual terrain payload delivered to it.
+type initializedTerrainViewer struct {
+	NopViewer
+	blocks chan uint32
+}
+
+// ViewChunk records the generation-written target before any later update.
+func (v initializedTerrainViewer) ViewChunk(_ ChunkPos, _ Dimension, _ map[cube.Pos]Block, c *chunk.Chunk) {
+	v.blocks <- c.Block(0, 10, 0, 0)
+}
+
+// generationLoadingObserver requests another delivery from generation initialization.
+type generationLoadingObserver struct {
+	generationSearchBlock
+	loader *Loader
+	loaded bool
+}
+
+// HandleChunkGenerate initializes the column and queues a finite second load.
+func (h *generationLoadingObserver) HandleChunkGenerate(tx *Tx, pos ChunkPos) {
+	if h.loader != nil && !h.loaded {
+		h.loaded = true
+		h.loader.Load(tx, 1)
+	}
+	h.generationSearchBlock.HandleChunkGenerate(tx, pos)
+}
+
+func TestLoaderDeliversInitializedGeneratedTerrain(t *testing.T) {
+	for _, synchronous := range []bool{true, false} {
+		for _, nested := range []bool{false, true} {
+			t.Run(fmt.Sprintf("synchronous%v/nested%v", synchronous, nested), func(t *testing.T) {
+				initialized, ticked := false, false
+				b := generationScheduledBlock{&initialized, &ticked}
+				registry := NewBlockRegistry()
+				registry.RegisterBlockState(BlockState{Name: "test:generation_scheduled", Properties: map[string]any{}})
+				registry.RegisterBlock(b)
+				registry.Finalize()
+				w := Config{Synchronous: synchronous, Blocks: registry}.New()
+				defer w.Close()
+				w.SetPaused(true)
+				h := &generationLoadingObserver{generationSearchBlock: generationSearchBlock{block: b}}
+				w.Handle(h)
+				v := initializedTerrainViewer{blocks: make(chan uint32, 2)}
+				loader := NewLoader(1, w, v)
+				if nested {
+					h.loader = loader
+				}
+				defer w.Do(func(tx *Tx) { loader.Close(tx) })
+				w.Do(func(tx *Tx) { loader.Load(tx, 1) })
+				count := 1
+				if nested {
+					count++
+				}
+				for range count {
+					if got := <-v.blocks; got != registry.BlockRuntimeID(b) {
+						t.Fatalf("viewer received terrain before initialization: block=%v", got)
+					}
+				}
+			})
+		}
 	}
 }

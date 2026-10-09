@@ -857,11 +857,10 @@ func (w *World) addEntity(tx *Tx, handle *EntityHandle) Entity {
 
 // addEntityAt adds an EntityHandle to a World at the position passed.
 func (w *World) addEntityAt(tx *Tx, handle *EntityHandle, pos mgl64.Vec3) Entity {
-	handle.setAndUnlockWorldAt(w, pos)
-	chunkPos := chunkPosFromVec3(handle.data.Pos)
-	w.entities[handle] = chunkPos
-
+	chunkPos := chunkPosFromVec3(pos)
 	c := tx.chunk(chunkPos)
+	handle.setAndUnlockWorldAt(w, pos)
+	w.entities[handle] = chunkPos
 	c.Entities, c.modified = append(c.Entities, handle), true
 
 	e := handle.mustEntity(tx)
@@ -1416,12 +1415,12 @@ func (w *World) emptyColumn() *Column {
 // calling callback once ready. It returns false if it could not be scheduled.
 func (w *World) loadChunkAsync(tx *Tx, pos ChunkPos, callback chunkCallback) bool {
 	if c, ok := w.chunks[pos]; ok {
-		callback(tx, c)
+		tx.deliverColumn(pos, c, callback)
 		return true
 	}
 	if w.conf.Synchronous {
 		// Synchronous worlds have no chunk workers; load on the calling goroutine.
-		callback(tx, tx.chunk(pos))
+		tx.deliverColumn(pos, tx.chunk(pos), callback)
 		return true
 	}
 	if req, ok := w.chunkRequests[pos]; ok {
