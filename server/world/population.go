@@ -76,8 +76,9 @@ func (tx *Tx) ChunkLastTick(pos ChunkPos) (int64, bool) {
 // their newly admitted columns are initialized after that callback returns.
 func (tx *Tx) readChunk(pos ChunkPos) *Column {
 	c := tx.chunk(pos)
+	pending := c.generated && !tx.generating
 	tx.initializeColumn(pos, c)
-	if !tx.generating {
+	if pending {
 		(ticker{}).dispatchGeneration(tx)
 	}
 	return c
