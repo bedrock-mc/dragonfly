@@ -1255,8 +1255,9 @@ func (w *World) close() {
 		w.Handler().HandleClose(tx)
 		tx.runDeferred()
 		(ticker{}).dispatchGeneration(tx)
-		w.save(w.closeChunk)(tx)
 		w.Handle(NopHandler{})
+
+		w.save(w.closeChunk)(tx)
 	})
 	w.scheduleMu.Lock()
 	w.closeAcceptingEntityTasks.Store(false)
