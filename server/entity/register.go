@@ -11,6 +11,7 @@ import (
 // implemented by Dragonfly.
 var DefaultRegistry = conf.New([]world.EntityType{
 	AreaEffectCloudType,
+	CowType, PigType, SheepType, ChickenType,
 	ArrowType,
 	BottleOfEnchantingType,
 	EggType,

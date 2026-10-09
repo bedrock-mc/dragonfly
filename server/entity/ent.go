@@ -65,12 +65,14 @@ func (e *Ent) Velocity() mgl64.Vec3 {
 // that axis in blocks/tick.
 func (e *Ent) SetVelocity(v mgl64.Vec3) {
 	e.data.Vel = v
+	e.tx.MarkEntityModified(e)
 }
 
 // Teleport teleports the entity to the position given.
 func (e *Ent) Teleport(pos mgl64.Vec3) {
 	viewers := e.tx.Viewers(e.data.Pos)
 	e.data.Pos = pos
+	e.tx.MarkEntityModified(e)
 	for _, v := range viewers {
 		v.ViewEntityTeleport(e, pos)
 	}
@@ -98,6 +100,7 @@ func (e *Ent) SetOnFire(duration time.Duration) {
 	stateChanged := (e.data.FireDuration > 0) != (duration > 0)
 
 	e.data.FireDuration = duration
+	e.tx.MarkEntityModified(e)
 	if stateChanged {
 		e.updateState()
 	}
@@ -136,14 +139,20 @@ func (e *Ent) SetAlwaysShowNameTag(alwaysShow bool) {
 
 // updateState updates the state of the entity for all viewers of the entity.
 func (e *Ent) updateState() {
+	e.tx.MarkEntityModified(e)
 	for _, v := range e.tx.Viewers(e.data.Pos) {
-		v.ViewEntityState(e)
+		v.ViewEntityState(e.handle.Type().Open(e.tx, e.handle, e.data))
 	}
 }
 
 // Tick ticks Ent, progressing its lifetime and closing the entity if it is
 // in the void.
 func (e *Ent) Tick(tx *world.Tx, current int64) {
+	e.tick(tx, current)
+}
+
+// tick reports terminal removal or travel so outer living wrappers stop immediately.
+func (e *Ent) tick(tx *world.Tx, current int64) bool {
 	e.deferPortalTravel = true
 	defer func() {
 		e.deferPortalTravel = false
@@ -152,28 +161,29 @@ func (e *Ent) Tick(tx *world.Tx, current int64) {
 	y := e.data.Pos[1]
 	if y < float64(tx.Range()[0]) && current%10 == 0 {
 		_ = e.Close()
-		return
+		return true
 	}
 	e.SetOnFire(e.OnFireDuration() - time.Second/20)
 
 	m := e.Behaviour().Tick(e, tx)
 	if e.finishPendingPortalTravel(tx) {
-		return
+		return true
 	}
 	if m != nil {
 		m.Send()
 	}
 	if e.checkPortalInsiders() && e.finishPendingPortalTravel(tx) {
-		return
+		return true
 	}
 	e.stopPortalContact()
 	e.data.Age += time.Second / 20
+	return false
 }
 
 // Close closes the Ent and removes the associated entity from the world.
 func (e *Ent) Close() error {
 	e.once.Do(func() {
-		e.tx.RemoveEntity(e)
+		e.tx.RemoveEntity(e.handle.Type().Open(e.tx, e.handle, e.data))
 		_ = e.handle.Close()
 	})
 	return nil

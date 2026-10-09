@@ -16,7 +16,7 @@ type wither struct {
 // Apply ...
 func (wither) Apply(e world.Entity, eff Effect) {
 	interval := max(80>>eff.Level(), 1)
-	if eff.Tick()%interval == 0 {
+	if eff.periodicPulse(interval) {
 		if l, ok := e.(living); ok {
 			l.Hurt(1, WitherDamageSource{})
 		}

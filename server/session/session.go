@@ -139,8 +139,9 @@ type Conn interface {
 	ReadPacket() (pk packet.Packet, err error)
 	// WritePacket queues a packet for the next flush.
 	WritePacket(pk packet.Packet) error
-	// WritePacketImmediate queues packets and submits them with the pending batch. Any configured send delay still applies.
-	WritePacketImmediate(pks ...packet.Packet) error
+	// Flush submits the pending batch. Connections may additionally implement
+	// WritePacketImmediate(...packet.Packet) error to submit disconnects in one call.
+	Flush() error
 	// StartGameContext starts the game for the Conn with a context to cancel it.
 	StartGameContext(ctx context.Context, data minecraft.GameData) error
 }
