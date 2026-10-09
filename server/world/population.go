@@ -1,0 +1,71 @@
+package world
+
+import (
+	"github.com/df-mc/dragonfly/server/block/cube"
+	"slices"
+)
+
+// compareChunkPos orders columns consistently for owner callbacks.
+func compareChunkPos(a, b ChunkPos) int {
+	if a[0] < b[0] {
+		return -1
+	}
+	if a[0] > b[0] {
+		return 1
+	}
+	if a[1] < b[1] {
+		return -1
+	}
+	if a[1] > b[1] {
+		return 1
+	}
+	return 0
+}
+
+// TickingChunks returns loaded columns within the world's simulation distance
+// of a loader. The result is a snapshot and querying it never generates terrain.
+func (tx *Tx) TickingChunks() []ChunkPos {
+	tx.rejectDetached()
+	w := tx.World()
+	_, loaders := w.allViewers()
+	centres := make([]ChunkPos, 0, len(loaders))
+	for _, l := range loaders {
+		l.mu.RLock()
+		centres = append(centres, l.pos)
+		l.mu.RUnlock()
+	}
+	result := make([]ChunkPos, 0)
+	for pos := range w.chunks {
+		if (ticker{}).anyWithinDistance(pos, centres, int32(w.tickRange())) {
+			result = append(result, pos)
+		}
+	}
+	slices.SortFunc(result, compareChunkPos)
+	return result
+}
+
+// ChunkLoaded reports whether a column is resident without loading it.
+func (tx *Tx) ChunkLoaded(pos ChunkPos) bool {
+	tx.rejectDetached()
+	_, ok := tx.World().chunks[pos]
+	return ok
+}
+
+// LightLevels returns unattenuated sky and block light for spawn admission.
+func (tx *Tx) LightLevels(pos cube.Pos) (sky, block uint8) {
+	return tx.SkyLight(pos), tx.BlockLight(pos)
+}
+
+// TickRange returns the simulation distance in columns.
+func (w *World) TickRange() int { return w.tickRange() }
+
+// ChunkLastTick returns the most recent simulation tick of a resident column.
+// It never loads a column; absent or inactive neighbours cannot enable spawning.
+func (tx *Tx) ChunkLastTick(pos ChunkPos) (int64, bool) {
+	tx.rejectDetached()
+	c, ok := tx.World().chunks[pos]
+	if !ok {
+		return 0, false
+	}
+	return c.lastTick, c.lastTick > 0
+}

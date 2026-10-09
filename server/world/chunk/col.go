@@ -5,6 +5,8 @@ import (
 )
 
 type Column struct {
+	// Generated marks a new generator result. It is transient and is never stored.
+	Generated       bool
 	Chunk           *Chunk
 	Entities        []Entity
 	BlockEntities   []BlockEntity
