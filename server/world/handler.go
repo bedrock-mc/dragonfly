@@ -110,7 +110,11 @@ type TickHandler interface {
 }
 
 // GenerationHandler receives newly generated columns after admission to the
-// world, before their first simulation tick or save. Saved columns do not trigger it.
+// world, before ordinary terrain reads, their first simulation tick or save.
+// Reads inside this callback may admit other columns without recursively invoking
+// generation handlers. Those columns are initialized after the callback returns.
+// Handlers must use tx, must not synchronously start another transaction, and must
+// not generate an unbounded chain of columns. Saved columns do not trigger it.
 type GenerationHandler interface {
 	HandleChunkGenerate(tx *Tx, pos ChunkPos)
 }

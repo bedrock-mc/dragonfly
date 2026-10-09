@@ -67,11 +67,17 @@ func (t ticker) tick(tx *Tx) {
 	w := tx.World()
 
 	w.set.Lock()
-	if s := w.set.Spawn; s[1] > tx.Range()[1] && w.Dimension() == Overworld {
-		// Vanilla will set the spawn position's Y value to max to indicate that
-		// the player should spawn at the highest position in the world.
-		w.set.Spawn[1] = tx.highestObstructingBlock(s[0], s[2]) + 1
+	spawn := w.set.Spawn
+	w.set.Unlock()
+	if spawn[1] > tx.Range()[1] && w.Dimension() == Overworld {
+		height := tx.highestObstructingBlock(spawn[0], spawn[2]) + 1
+		w.set.Lock()
+		if w.set.Spawn == spawn {
+			w.set.Spawn[1] = height
+		}
+		w.set.Unlock()
 	}
+	w.set.Lock()
 	if len(viewers) == 0 && w.set.CurrentTick != 0 && !w.conf.Synchronous {
 		// Don't continue ticking if no viewers are in the world. Synchronous
 		// worlds only tick on explicit AdvanceTick calls, so they always tick.
@@ -140,7 +146,7 @@ func (t ticker) performNeighbourUpdates(tx *Tx) {
 
 	for _, update := range updates {
 		pos, changedNeighbour := update.pos, update.neighbour
-		if ticker, ok := t.simulationBlock(tx, pos).(NeighbourUpdateTicker); ok {
+		if ticker, ok := tx.Block(pos).(NeighbourUpdateTicker); ok {
 			ticker.NeighbourUpdateTick(pos, changedNeighbour, tx)
 		}
 		if liquid, ok := tx.additionalLiquid(pos); ok {
@@ -348,7 +354,7 @@ func (queue *scheduledTickQueue) tick(tx *Tx, tick int64) {
 		if t.t > tick {
 			continue
 		}
-		b := (ticker{}).simulationBlock(tx, t.pos)
+		b := tx.Block(t.pos)
 		if ticker, ok := b.(ScheduledTicker); ok && w.conf.Blocks.BlockHash(b) == t.bhash {
 			ticker.ScheduledTick(t.pos, tx, w.r)
 		} else if liquid, ok := tx.additionalLiquid(t.pos); ok && w.conf.Blocks.BlockHash(liquid) == t.bhash {
@@ -416,15 +422,17 @@ func (queue *scheduledTickQueue) add(ticks []scheduledTick) {
 	}
 }
 
-// dispatchGeneration initialises every column admitted by owner callbacks before
-// simulation. Clearing each batch first prevents duplicate callbacks on reentry.
+// dispatchGeneration drains pending initialization without recursively invoking
+// handlers. Handlers must not admit an unbounded chain of fresh columns.
 func (t ticker) dispatchGeneration(tx *Tx) {
+	if tx.generating {
+		return
+	}
 	w := tx.World()
 	for {
 		generated := make([]ChunkPos, 0)
 		for pos, c := range w.chunks {
 			if c.generated {
-				c.generated = false
 				generated = append(generated, pos)
 			}
 		}
@@ -432,21 +440,10 @@ func (t ticker) dispatchGeneration(tx *Tx) {
 			return
 		}
 		slices.SortFunc(generated, compareChunkPos)
-		if h, ok := w.Handler().(GenerationHandler); ok {
-			for _, pos := range generated {
-				h.HandleChunkGenerate(tx, pos)
+		for _, pos := range generated {
+			if c := w.chunks[pos]; c != nil {
+				tx.initializeColumn(pos, c)
 			}
 		}
 	}
-}
-
-// simulationBlock initialises a newly admitted column before returning its block
-// for simulation. The callback may change the block, so read it again afterward.
-func (t ticker) simulationBlock(tx *Tx, pos cube.Pos) Block {
-	b := tx.Block(pos)
-	if c := tx.World().chunks[chunkPosFromBlockPos(pos)]; c != nil && c.generated {
-		t.dispatchGeneration(tx)
-		b = tx.Block(pos)
-	}
-	return b
 }

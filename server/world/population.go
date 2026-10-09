@@ -70,3 +70,29 @@ func (tx *Tx) ChunkLastTick(pos ChunkPos) (int64, bool) {
 	}
 	return c.lastTick, c.lastTick > 0
 }
+
+// readChunk completes generation initialization before exposing terrain to an
+// ordinary owner read. Reads inside generation callbacks see admitted terrain;
+// their newly admitted columns are initialized after that callback returns.
+func (tx *Tx) readChunk(pos ChunkPos) *Column {
+	c := tx.chunk(pos)
+	tx.initializeColumn(pos, c)
+	if !tx.generating {
+		(ticker{}).dispatchGeneration(tx)
+	}
+	return c
+}
+
+// initializeColumn invokes the optional handler once, on the same owner
+// transaction and without holding settings or entity locks.
+func (tx *Tx) initializeColumn(pos ChunkPos, c *Column) {
+	if !c.generated || tx.generating {
+		return
+	}
+	c.generated = false
+	tx.generating = true
+	defer func() { tx.generating = false }()
+	if h, ok := tx.World().Handler().(GenerationHandler); ok {
+		h.HandleChunkGenerate(tx, pos)
+	}
+}

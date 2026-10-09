@@ -216,7 +216,7 @@ func (w *World) EntityRegistry() EntityRegistry {
 // at that position, the chunk is loaded, or generated if it could not be found
 // in the world save, and the block returned.
 func (tx *Tx) block(pos cube.Pos) Block {
-	return tx.World().blockInChunk(tx.chunk(chunkPosFromBlockPos(pos)), pos)
+	return tx.World().blockInChunk(tx.readChunk(chunkPosFromBlockPos(pos)), pos)
 }
 
 // blockLoaded reads a block from a position only if its chunk is already loaded.
@@ -270,7 +270,7 @@ func (tx *Tx) biome(pos cube.Pos) Biome {
 		// Fast way out.
 		return ocean()
 	}
-	id := int(tx.chunk(chunkPosFromBlockPos(pos)).Biome(uint8(pos[0]), int16(pos[1]), uint8(pos[2])))
+	id := int(tx.readChunk(chunkPosFromBlockPos(pos)).Biome(uint8(pos[0]), int16(pos[1]), uint8(pos[2])))
 	b, ok := BiomeByID(id)
 	if !ok {
 		tx.World().conf.Log.Error("biome not found by ID", "ID", id)
@@ -292,14 +292,14 @@ func (w *World) HighestLightBlocker(x, z int) int {
 // highestLightBlocker gets the Y value of the highest fully light blocking
 // block at the x and z values passed in the World.
 func (tx *Tx) highestLightBlocker(x, z int) int {
-	return int(tx.chunk(ChunkPos{int32(x >> 4), int32(z >> 4)}).HighestLightBlocker(uint8(x), uint8(z)))
+	return int(tx.readChunk(ChunkPos{int32(x >> 4), int32(z >> 4)}).HighestLightBlocker(uint8(x), uint8(z)))
 }
 
 // highestBlock looks up the highest non-air block in the World at a specific x
 // and z The y value of the highest block is returned, or 0 if no blocks were
 // present in the column.
 func (tx *Tx) highestBlock(x, z int) int {
-	return int(tx.chunk(ChunkPos{int32(x >> 4), int32(z >> 4)}).HighestBlock(uint8(x), uint8(z)))
+	return int(tx.readChunk(ChunkPos{int32(x >> 4), int32(z >> 4)}).HighestBlock(uint8(x), uint8(z)))
 }
 
 // highestObstructingBlock returns the highest block in the World at a given x
@@ -570,7 +570,7 @@ func (tx *Tx) liquid(pos cube.Pos) (Liquid, bool) {
 		// Fast way out.
 		return nil, false
 	}
-	c := tx.chunk(chunkPosFromBlockPos(pos))
+	c := tx.readChunk(chunkPosFromBlockPos(pos))
 	x, y, z := uint8(pos[0]), int16(pos[1]), uint8(pos[2])
 
 	id := c.Block(x, y, z, 0)
@@ -687,7 +687,7 @@ func (tx *Tx) additionalLiquid(pos cube.Pos) (Liquid, bool) {
 		// Fast way out.
 		return nil, false
 	}
-	c := tx.chunk(chunkPosFromBlockPos(pos))
+	c := tx.readChunk(chunkPosFromBlockPos(pos))
 	id := c.Block(uint8(pos[0]), int16(pos[1]), uint8(pos[2]), 1)
 
 	b, ok := w.conf.Blocks.BlockByRuntimeID(id)
@@ -717,6 +717,7 @@ func (tx *Tx) light(pos cube.Pos) uint8 {
 	if !ok {
 		return 0
 	}
+	tx.initializeColumn(chunkPosFromBlockPos(pos), c)
 	return c.Light(uint8(pos[0]), int16(pos[1]), uint8(pos[2]))
 }
 
@@ -734,7 +735,7 @@ func (tx *Tx) skyLight(pos cube.Pos) uint8 {
 		// Above the rest of the world, so full skylight.
 		return 15
 	}
-	return tx.chunk(chunkPosFromBlockPos(pos)).SkyLight(uint8(pos[0]), int16(pos[1]), uint8(pos[2]))
+	return tx.readChunk(chunkPosFromBlockPos(pos)).SkyLight(uint8(pos[0]), int16(pos[1]), uint8(pos[2]))
 }
 
 // blockLight returns the block light level at the position passed. Unlike light, this level is not
@@ -744,7 +745,7 @@ func (tx *Tx) blockLight(pos cube.Pos) uint8 {
 	if pos[1] < w.ra[0] || pos[1] > w.ra[1] {
 		return 0
 	}
-	return tx.chunk(chunkPosFromBlockPos(pos)).BlockLight(uint8(pos[0]), int16(pos[1]), uint8(pos[2]))
+	return tx.readChunk(chunkPosFromBlockPos(pos)).BlockLight(uint8(pos[0]), int16(pos[1]), uint8(pos[2]))
 }
 
 // Time returns the current time of the world. The time is incremented every
@@ -1205,9 +1206,7 @@ func (w *World) save(f func(*Tx, ChunkPos, *Column)) execFunc {
 
 // saveChunk saves a chunk and its entities to disk after compacting the chunk.
 func (w *World) saveChunk(tx *Tx, pos ChunkPos, c *Column) {
-	if c.generated {
-		(ticker{}).dispatchGeneration(tx)
-	}
+	tx.initializeColumn(pos, c)
 	if !w.conf.ReadOnly && c.modified {
 		c.Compact()
 		if err := w.conf.Provider.StoreColumn(pos, w.conf.Dim, w.columnTo(c, pos)); err != nil {
@@ -1257,9 +1256,8 @@ func (w *World) close() {
 		w.Handler().HandleClose(tx)
 		tx.runDeferred()
 		(ticker{}).dispatchGeneration(tx)
-		w.Handle(NopHandler{})
-
 		w.save(w.closeChunk)(tx)
+		w.Handle(NopHandler{})
 	})
 	w.scheduleMu.Lock()
 	w.closeAcceptingEntityTasks.Store(false)

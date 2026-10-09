@@ -350,3 +350,41 @@ func TestAnimalEffectsDirectMapRoundTrip(t *testing.T) {
 		}
 	})
 }
+
+// physicsGenerationWall installs collision terrain when its column is initialized.
+type physicsGenerationWall struct{ world.NopHandler }
+
+// HandleChunkGenerate places a wall in the previously unloaded neighbor.
+func (physicsGenerationWall) HandleChunkGenerate(tx *world.Tx, pos world.ChunkPos) {
+	if pos == (world.ChunkPos{1, 0}) {
+		for y := 10; y <= 11; y++ {
+			tx.SetBlock(cube.Pos{16, y, 0}, block.Stone{}, &world.SetOpts{DisableBlockUpdates: true, DisableRedstoneUpdates: true})
+		}
+	}
+}
+
+func TestAnimalPhysicsReadsInitializedNeighbor(t *testing.T) {
+	w := world.Config{Synchronous: true, Entities: DefaultRegistry}.New()
+	defer w.Close()
+	w.Handle(physicsGenerationWall{})
+	var cow *world.EntityHandle
+	w.Do(func(tx *world.Tx) {
+		tx.SetBlock(cube.Pos{15, 9, 0}, block.Stone{}, &world.SetOpts{DisableBlockUpdates: true, DisableRedstoneUpdates: true})
+		a := tx.AddEntity(NewCow(world.EntitySpawnOpts{Position: mgl64.Vec3{15.3, 10, .5}})).(*Animal)
+		cow = a.H()
+		a.SetVelocity(mgl64.Vec3{.8, 0, 0})
+		if tx.ChunkLoaded(world.ChunkPos{1, 0}) {
+			t.Fatal("collision neighbor was already loaded")
+		}
+	})
+	w.AdvanceTick()
+	w.Do(func(tx *world.Tx) {
+		a, ok := cow.Entity(tx)
+		if !ok {
+			t.Fatal("cow disappeared")
+		}
+		if x := a.Position()[0]; x > 15.551 {
+			t.Fatalf("cow crossed wall before neighbor initialization: x=%v", x)
+		}
+	})
+}

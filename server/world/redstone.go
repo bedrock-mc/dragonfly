@@ -466,7 +466,7 @@ func (e *redstoneEngine) compileRegion(tx *Tx, pos cube.Pos, seen map[cube.Pos]s
 
 // update applies a computed input power to a consumer or action block.
 func (e *redstoneEngine) update(tx *Tx, pos cube.Pos, d redstoneDirty, newPower int) {
-	b := (ticker{}).simulationBlock(tx, pos)
+	b := tx.Block(pos)
 	oldPower, newPower := e.power[pos], ClampRedstonePower(newPower)
 
 	after, blockChanged := b, false

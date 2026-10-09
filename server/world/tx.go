@@ -18,6 +18,7 @@ type Tx struct {
 	viewIncomplete bool
 	closed         bool
 	deferred       []scheduledTransaction
+	generating     bool
 }
 
 // Context is a cancellable event scope passed to Handler events. It embeds the
@@ -129,6 +130,9 @@ func (tx *Tx) Block(pos cube.Pos) Block {
 func (tx *Tx) BlockLoaded(pos cube.Pos) (Block, bool) {
 	if tx.view != nil {
 		return tx.view.BlockLoaded(pos)
+	}
+	if c := tx.World().chunks[chunkPosFromBlockPos(pos)]; c != nil {
+		tx.initializeColumn(chunkPosFromBlockPos(pos), c)
 	}
 	return tx.World().blockLoaded(pos)
 }

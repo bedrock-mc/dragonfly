@@ -264,3 +264,43 @@ func TestOwnerCallbacksPreserveScheduledDelay(t *testing.T) {
 		})
 	}
 }
+
+// chainedGenerationObserver admits a finite neighbor chain without nested callbacks.
+type chainedGenerationObserver struct {
+	NopHandler
+	seen           map[ChunkPos]int
+	active, nested bool
+}
+
+// HandleChunkGenerate exercises reentrant terrain reads and settings access.
+func (h *chainedGenerationObserver) HandleChunkGenerate(tx *Tx, pos ChunkPos) {
+	if h.active {
+		h.nested = true
+	}
+	h.active = true
+	defer func() { h.active = false }()
+	h.seen[pos]++
+	tx.World().Time()
+	tx.Block(cube.Pos{int(pos[0]) * 16, 0, 0})
+	if pos[0] < 2 {
+		tx.Block(cube.Pos{int(pos[0]+1) * 16, 0, 0})
+	}
+}
+
+func TestGenerationAdmissionChainUsesOwnerWithoutRecursion(t *testing.T) {
+	w := Config{Synchronous: true}.New()
+	defer w.Close()
+	h := &chainedGenerationObserver{seen: make(map[ChunkPos]int)}
+	w.Handle(h)
+	w.Do(func(tx *Tx) { tx.Block(cube.Pos{}) })
+	if h.nested || len(h.seen) != 3 {
+		t.Fatalf("generation chain: nested=%v callbacks=%v", h.nested, h.seen)
+	}
+	w.AdvanceTick()
+	w.Save()
+	for pos, calls := range h.seen {
+		if calls != 1 {
+			t.Fatalf("column %v initialized %d times", pos, calls)
+		}
+	}
+}
