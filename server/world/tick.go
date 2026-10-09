@@ -97,6 +97,7 @@ func (t ticker) tick(tx *Tx) {
 	}
 
 	w.set.Unlock()
+	w.scheduledUpdates.currentTick = tick
 
 	if tryAdvanceDay {
 		t.tryAdvanceDay(tx, cycle)

@@ -209,3 +209,58 @@ func TestSynchronousPopulationChunksWithoutLoaders(t *testing.T) {
 		}
 	})
 }
+
+// callbackScheduleObserver schedules one update through the selected owner callback.
+type callbackScheduleObserver struct {
+	NopHandler
+	generation, scheduled bool
+	block                 Block
+}
+
+// HandleTick requests a delayed update from the first simulation callback.
+func (h *callbackScheduleObserver) HandleTick(tx *Tx, _ int64) {
+	if !h.generation {
+		h.schedule(tx)
+	}
+}
+
+// HandleChunkGenerate requests a delayed update from the first generation callback.
+func (h *callbackScheduleObserver) HandleChunkGenerate(tx *Tx, _ ChunkPos) {
+	if h.generation {
+		h.schedule(tx)
+	}
+}
+
+// schedule requests exactly one tick of delay from the callback's current tick.
+func (h *callbackScheduleObserver) schedule(tx *Tx) {
+	if !h.scheduled {
+		h.scheduled = true
+		tx.ScheduleBlockUpdate(cube.Pos{0, 10, 0}, h.block, time.Second/20)
+	}
+}
+
+func TestOwnerCallbacksPreserveScheduledDelay(t *testing.T) {
+	for _, generation := range []bool{false, true} {
+		t.Run(map[bool]string{false: "tick", true: "generation"}[generation], func(t *testing.T) {
+			initialized, ticked := true, false
+			b := generationScheduledBlock{&initialized, &ticked}
+			registry := NewBlockRegistry()
+			registry.RegisterBlockState(BlockState{Name: "test:generation_scheduled", Properties: map[string]any{}})
+			registry.RegisterBlock(b)
+			w := Config{Synchronous: true, Blocks: registry}.New()
+			defer w.Close()
+			w.Handle(&callbackScheduleObserver{generation: generation, block: b})
+			w.Do(func(tx *Tx) {
+				tx.SetBlock(cube.Pos{0, 10, 0}, b, &SetOpts{DisableBlockUpdates: true, DisableRedstoneUpdates: true})
+			})
+			w.AdvanceTick()
+			if ticked {
+				t.Fatal("one-tick callback delay executed immediately")
+			}
+			w.AdvanceTick()
+			if !ticked {
+				t.Fatal("one-tick callback delay did not execute on the next tick")
+			}
+		})
+	}
+}
