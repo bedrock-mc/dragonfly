@@ -1193,6 +1193,7 @@ func (w *World) save(f func(*Tx, ChunkPos, *Column)) execFunc {
 		if w.conf.ReadOnly {
 			return
 		}
+		(ticker{}).dispatchGeneration(tx)
 		w.conf.Log.Debug("Saving chunks in memory to disk...")
 		for pos, c := range w.chunks {
 			f(tx, pos, c)
@@ -1203,7 +1204,10 @@ func (w *World) save(f func(*Tx, ChunkPos, *Column)) execFunc {
 }
 
 // saveChunk saves a chunk and its entities to disk after compacting the chunk.
-func (w *World) saveChunk(_ *Tx, pos ChunkPos, c *Column) {
+func (w *World) saveChunk(tx *Tx, pos ChunkPos, c *Column) {
+	if c.generated {
+		(ticker{}).dispatchGeneration(tx)
+	}
 	if !w.conf.ReadOnly && c.modified {
 		c.Compact()
 		if err := w.conf.Provider.StoreColumn(pos, w.conf.Dim, w.columnTo(c, pos)); err != nil {
@@ -1248,9 +1252,11 @@ func (w *World) close() {
 	w.closeAcceptingEntityTasks.Store(true)
 	w.scheduleMu.Unlock()
 	<-w.exec(func(tx *Tx) {
+		(ticker{}).dispatchGeneration(tx)
 		// Let user code run anything that needs to be finished before closing.
 		w.Handler().HandleClose(tx)
 		tx.runDeferred()
+		(ticker{}).dispatchGeneration(tx)
 		w.Handle(NopHandler{})
 
 		w.save(w.closeChunk)(tx)

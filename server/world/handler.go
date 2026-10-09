@@ -110,7 +110,7 @@ type TickHandler interface {
 }
 
 // GenerationHandler receives newly generated columns after admission to the
-// world, before their first simulation tick. Saved columns do not trigger it.
+// world, before their first simulation tick or save. Saved columns do not trigger it.
 type GenerationHandler interface {
 	HandleChunkGenerate(tx *Tx, pos ChunkPos)
 }

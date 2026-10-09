@@ -139,3 +139,55 @@ func TestScheduledTickInitializesFreshColumn(t *testing.T) {
 		t.Fatal("scheduled block simulated before generation initialization")
 	}
 }
+
+// generationSaveObserver tracks initialization, including columns admitted while closing.
+type generationSaveObserver struct {
+	NopHandler
+	initialized map[ChunkPos]bool
+}
+
+// HandleChunkGenerate records completion of each column's one-time initialization.
+func (h *generationSaveObserver) HandleChunkGenerate(_ *Tx, pos ChunkPos) { h.initialized[pos] = true }
+
+// HandleClose admits a final column that must be initialized before saving.
+func (h *generationSaveObserver) HandleClose(tx *Tx) { tx.Block(cube.Pos{16, 0, 0}) }
+
+// generationSaveProvider observes whether initialization precedes persistence.
+type generationSaveProvider struct {
+	NopProvider
+	observer *generationSaveObserver
+	stored   map[ChunkPos]bool
+}
+
+// StoreColumn records initialization at the moment the column is persisted.
+func (p *generationSaveProvider) StoreColumn(pos ChunkPos, _ Dimension, _ *chunk.Column) error {
+	p.stored[pos] = p.observer.initialized[pos]
+	return nil
+}
+
+func TestGenerationInitializationBeforePersistence(t *testing.T) {
+	for _, mode := range []string{"save", "unload", "close"} {
+		t.Run(mode, func(t *testing.T) {
+			h := &generationSaveObserver{initialized: make(map[ChunkPos]bool)}
+			p := &generationSaveProvider{observer: h, stored: make(map[ChunkPos]bool)}
+			w := Config{Synchronous: true, Provider: p}.New()
+			defer w.Close()
+			w.Handle(h)
+			w.Do(func(tx *Tx) { tx.Block(cube.Pos{}) })
+			switch mode {
+			case "save":
+				w.Save()
+			case "unload":
+				w.Do(func(tx *Tx) { w.closeChunk(tx, ChunkPos{}, w.chunks[ChunkPos{}]) })
+			case "close":
+				w.Close()
+			}
+			if initialized, stored := p.stored[ChunkPos{}]; !stored || !initialized {
+				t.Fatalf("column persisted before generation initialization: %v", p.stored)
+			}
+			if mode == "close" && !p.stored[ChunkPos{1, 0}] {
+				t.Fatalf("close-admitted column skipped initialization: %v", p.stored)
+			}
+		})
+	}
+}
