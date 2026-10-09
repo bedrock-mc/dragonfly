@@ -138,6 +138,6 @@ func (r *chunkRequest) signal(tx *Tx) {
 		return
 	}
 	for _, recv := range r.callbacks {
-		tx.deliverColumn(pos, r.result, recv)
+		recv(tx, r.result)
 	}
 }

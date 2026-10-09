@@ -67,17 +67,11 @@ func (t ticker) tick(tx *Tx) {
 	w := tx.World()
 
 	w.set.Lock()
-	spawn := w.set.Spawn
-	w.set.Unlock()
-	if spawn[1] > tx.Range()[1] && w.Dimension() == Overworld {
-		height := tx.highestObstructingBlock(spawn[0], spawn[2]) + 1
-		w.set.Lock()
-		if w.set.Spawn == spawn {
-			w.set.Spawn[1] = height
-		}
-		w.set.Unlock()
+	if s := w.set.Spawn; s[1] > tx.Range()[1] && w.Dimension() == Overworld {
+		// Vanilla will set the spawn position's Y value to max to indicate that
+		// the player should spawn at the highest position in the world.
+		w.set.Spawn[1] = tx.highestObstructingBlock(s[0], s[2]) + 1
 	}
-	w.set.Lock()
 	if len(viewers) == 0 && w.set.CurrentTick != 0 && !w.conf.Synchronous {
 		// Don't continue ticking if no viewers are in the world. Synchronous
 		// worlds only tick on explicit AdvanceTick calls, so they always tick.
@@ -103,7 +97,6 @@ func (t ticker) tick(tx *Tx) {
 	}
 
 	w.set.Unlock()
-	w.scheduledUpdates.currentTick = tick
 
 	if tryAdvanceDay {
 		t.tryAdvanceDay(tx, cycle)
@@ -123,14 +116,6 @@ func (t ticker) tick(tx *Tx) {
 		w.tickLightning(tx)
 	}
 
-	for _, pos := range tx.TickingChunks() {
-		w.chunks[pos].lastTick = tick
-	}
-	t.dispatchGeneration(tx)
-	if h, ok := w.Handler().(TickHandler); ok {
-		h.HandleTick(tx, tick)
-	}
-	t.dispatchGeneration(tx)
 	t.tickEntities(tx, tick)
 	w.scheduledUpdates.tick(tx, tick)
 	t.tickBlocksRandomly(tx, loaders, tick)
@@ -184,9 +169,6 @@ func (t ticker) tickBlocksRandomly(tx *Tx, loaders []*Loader, tick int64) {
 	}
 
 	for pos, c := range tx.World().chunks {
-		if c.generated {
-			continue
-		}
 		if !t.anyWithinDistance(pos, loaded, r) {
 			// No loaders in this chunk that are within the simulation distance, so proceed to the next.
 			continue
@@ -252,7 +234,7 @@ func (t ticker) tickEntities(tx *Tx, tick int64) {
 		chunkPos := chunkPosFromVec3(handle.data.Pos)
 
 		c, ok := tx.World().chunks[chunkPos]
-		if !ok || c.generated {
+		if !ok {
 			continue
 		}
 
@@ -261,7 +243,6 @@ func (t ticker) tickEntities(tx *Tx, tick int64) {
 			// for loaders to view it.
 			tx.World().entities[handle] = chunkPos
 			c.Entities = append(c.Entities, handle)
-			c.modified = true
 
 			var viewers []Viewer
 
@@ -270,7 +251,6 @@ func (t ticker) tickEntities(tx *Tx, tick int64) {
 			// the loaders from the old chunk. We can assume they never saw the entity in the first place.
 			if old, ok := tx.World().chunks[lastPos]; ok {
 				old.Entities = sliceutil.DeleteVal(old.Entities, handle)
-				old.modified = true
 				viewers = old.viewers
 			}
 
@@ -292,7 +272,6 @@ func (t ticker) tickEntities(tx *Tx, tick int64) {
 
 		if tx.World().conf.Synchronous || len(c.viewers) > 0 {
 			if te, ok := e.(TickerEntity); ok {
-				c.modified = true
 				te.Tick(tx, tick)
 			}
 		}
@@ -418,32 +397,6 @@ func (queue *scheduledTickQueue) add(ticks []scheduledTick) {
 			queue.furthestTicks[index] = max(existing, t.t)
 		} else {
 			queue.furthestTicks[index] = t.t
-		}
-	}
-}
-
-// dispatchGeneration drains pending initialization without recursively invoking
-// handlers. Handlers must not admit an unbounded chain of fresh columns.
-func (t ticker) dispatchGeneration(tx *Tx) {
-	if tx.generating {
-		return
-	}
-	w := tx.World()
-	for {
-		generated := make([]ChunkPos, 0)
-		for pos, c := range w.chunks {
-			if c.generated {
-				generated = append(generated, pos)
-			}
-		}
-		if len(generated) == 0 {
-			return
-		}
-		slices.SortFunc(generated, compareChunkPos)
-		for _, pos := range generated {
-			if c := w.chunks[pos]; c != nil {
-				tx.initializeColumn(pos, c)
-			}
 		}
 	}
 }

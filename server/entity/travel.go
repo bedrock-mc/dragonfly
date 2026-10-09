@@ -169,11 +169,7 @@ func (t *PortalTravelComputer) travel(e Traveller, tx *world.Tx, destination *wo
 	t.travelling, t.timedOut, t.awaitingTravel = true, true, false
 	t.mu.Unlock()
 
-	actor, ok := e.H().Entity(tx)
-	if !ok {
-		return
-	}
-	handle := tx.RemoveEntity(actor)
+	handle := tx.RemoveEntity(e)
 	if handle == nil {
 		t.mu.Lock()
 		t.travelling, t.timedOut = false, false

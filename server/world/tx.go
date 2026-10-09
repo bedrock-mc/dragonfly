@@ -18,7 +18,6 @@ type Tx struct {
 	viewIncomplete bool
 	closed         bool
 	deferred       []scheduledTransaction
-	generating     bool
 }
 
 // Context is a cancellable event scope passed to Handler events. It embeds the
@@ -131,9 +130,6 @@ func (tx *Tx) BlockLoaded(pos cube.Pos) (Block, bool) {
 	if tx.view != nil {
 		return tx.view.BlockLoaded(pos)
 	}
-	if c := tx.World().chunks[chunkPosFromBlockPos(pos)]; c != nil {
-		tx.initializeColumn(chunkPosFromBlockPos(pos), c)
-	}
 	return tx.World().blockLoaded(pos)
 }
 
@@ -141,7 +137,7 @@ func (tx *Tx) BlockLoaded(pos cube.Pos) (Block, bool) {
 // horizontal square radius around pos. Chunks not in memory are read from the world save; missing chunks are
 // skipped, not generated. Only the primary block layer is searched and blocks are matched by their state alone.
 func (tx *Tx) BlocksWithin(pos cube.Pos, radius int, blocks ...Block) iter.Seq[cube.Pos] {
-	return tx.World().blocksWithin(tx, pos, radius, blocks...)
+	return tx.World().blocksWithin(pos, radius, blocks...)
 }
 
 // Liquid attempts to return a Liquid block at the position passed. This
@@ -334,18 +330,6 @@ func (tx *Tx) AddEntityAt(e *EntityHandle, pos mgl64.Vec3) Entity {
 // from the World, the Entity is no longer usable.
 func (tx *Tx) RemoveEntity(e Entity) *EntityHandle {
 	return tx.World().removeEntity(e, tx)
-}
-
-// MarkEntityModified marks the resident owning column dirty after serialized
-// entity state changes. Entities outside this transaction's world are ignored.
-func (tx *Tx) MarkEntityModified(e Entity) {
-	tx.rejectDetached()
-	w := tx.World()
-	if pos, ok := w.entities[e.H()]; ok {
-		if c := w.chunks[pos]; c != nil {
-			c.modified = true
-		}
-	}
 }
 
 // EntitiesWithin returns an iterator that yields all entities contained within

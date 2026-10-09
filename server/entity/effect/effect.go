@@ -7,8 +7,6 @@ import (
 	"github.com/df-mc/dragonfly/server/world"
 )
 
-const tickDuration = time.Second / 20
-
 // LastingType represents an effect type that can have a duration. An effect
 // can be made using it by calling effect.New with the LastingType.
 type LastingType interface {
@@ -85,13 +83,6 @@ func (e Effect) WithoutParticles() Effect {
 	return e
 }
 
-// WithElapsedTicks restores the number of completed applications without advancing
-// the remaining duration. Negative values are treated as a fresh effect.
-func (e Effect) WithElapsedTicks(ticks int) Effect {
-	e.tick = max(ticks, 0)
-	return e
-}
-
 // ParticlesHidden returns true if the Effect had its particles hidden by calling WithoutParticles.
 func (e Effect) ParticlesHidden() bool {
 	return e.particlesHidden
@@ -130,7 +121,7 @@ func (e Effect) Type() Type {
 func (e Effect) TickDuration() Effect {
 	if _, ok := e.t.(LastingType); ok {
 		if !e.Infinite() {
-			e.d -= tickDuration
+			e.d -= time.Second / 20
 		}
 		e.tick++
 	}
@@ -198,14 +189,4 @@ type living interface {
 	Speed() float64
 	// SetSpeed sets the speed of an entity to a new value.
 	SetSpeed(float64)
-}
-
-// periodicPulse reports whether an active effect is due for a positive interval.
-// Finite effects use remaining duration; infinite effects retain the elapsed clock.
-func (e Effect) periodicPulse(interval int) bool {
-	ticks := e.Tick()
-	if !e.Infinite() {
-		ticks = int(e.Duration() / tickDuration)
-	}
-	return ticks%interval == 0
 }
