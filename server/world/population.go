@@ -23,7 +23,8 @@ func compareChunkPos(a, b ChunkPos) int {
 }
 
 // TickingChunks returns loaded columns within the world's simulation distance
-// of a loader. The result is a snapshot and querying it never generates terrain.
+// of a loader, or all resident columns in synchronous worlds. The result is a
+// snapshot and querying it never generates terrain.
 func (tx *Tx) TickingChunks() []ChunkPos {
 	tx.rejectDetached()
 	w := tx.World()
@@ -36,7 +37,7 @@ func (tx *Tx) TickingChunks() []ChunkPos {
 	}
 	result := make([]ChunkPos, 0)
 	for pos := range w.chunks {
-		if (ticker{}).anyWithinDistance(pos, centres, int32(w.tickRange())) {
+		if w.conf.Synchronous || (ticker{}).anyWithinDistance(pos, centres, int32(w.tickRange())) {
 			result = append(result, pos)
 		}
 	}

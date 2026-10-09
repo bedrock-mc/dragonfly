@@ -328,3 +328,25 @@ func TestAnimalDamageImmunitySurvivesReopening(t *testing.T) {
 		}
 	})
 }
+
+func TestAnimalEffectsDirectMapRoundTrip(t *testing.T) {
+	w := world.Config{Synchronous: true, Entities: DefaultRegistry}.New()
+	defer w.Close()
+	w.Do(func(tx *world.Tx) {
+		a := tx.AddEntity(NewCow(world.EntitySpawnOpts{Position: mgl64.Vec3{0, 10, 0}})).(*Animal)
+		a.AddEffect(effect.New(effect.Speed, 1, time.Second))
+		a.AddEffect(effect.New(effect.HealthBoost, 1, time.Second))
+		data := world.EntityData{}
+		CowType.DecodeNBT(CowType.EncodeNBT(a.data), &data)
+		restored := &Animal{Ent: Open(tx, a.H(), &data)}
+		if len(restored.Effects()) != 2 {
+			t.Fatal("direct-map reopening dropped lasting effects")
+		}
+		for range 21 {
+			restored.state().effects.Tick(restored, tx)
+		}
+		if math.Abs(restored.Speed()-.25) > 1e-9 || restored.MaxHealth() != 10 {
+			t.Fatalf("direct-map reopening retained expired modifiers: speed=%v max=%v", restored.Speed(), restored.MaxHealth())
+		}
+	})
+}

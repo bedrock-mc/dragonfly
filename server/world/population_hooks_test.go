@@ -191,3 +191,21 @@ func TestGenerationInitializationBeforePersistence(t *testing.T) {
 		})
 	}
 }
+
+func TestSynchronousPopulationChunksWithoutLoaders(t *testing.T) {
+	w := Config{Synchronous: true}.New()
+	defer w.Close()
+	w.SetTickRange(4)
+	w.Do(func(tx *Tx) { tx.Block(cube.Pos{}); tx.Block(cube.Pos{16, 0, 0}) })
+	w.AdvanceTick()
+	w.Do(func(tx *Tx) {
+		if len(tx.TickingChunks()) != 2 {
+			t.Fatalf("synchronous population omitted resident columns: %v", tx.TickingChunks())
+		}
+		for _, pos := range []ChunkPos{{}, {1, 0}} {
+			if tick, ok := tx.ChunkLastTick(pos); !ok || tick != tx.CurrentTick() {
+				t.Fatalf("simulated column %v has no current tick stamp: %v %v", pos, tick, ok)
+			}
+		}
+	})
+}

@@ -122,8 +122,8 @@ func (t animalType) EncodeNBT(data *world.EntityData) map[string]any {
 }
 
 // encodeAnimalEffects preserves lasting modifiers and their remaining durations.
-func encodeAnimalEffects(b *animalState) []map[string]any {
-	entries := make([]map[string]any, 0, len(b.effects.Effects()))
+func encodeAnimalEffects(b *animalState) []any {
+	entries := make([]any, 0, len(b.effects.Effects()))
 	for _, e := range b.effects.Effects() {
 		id, ok := effect.ID(e.Type())
 		if !ok {
