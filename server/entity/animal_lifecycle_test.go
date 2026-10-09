@@ -226,3 +226,40 @@ func TestAnimalPortalTickEndsBeforeFireDamage(t *testing.T) {
 		t.Fatalf("terminal portal tick applied source-world fire damage: health=%v", health)
 	}
 }
+
+// animalDespawnObserver verifies the living contract at terminal removal.
+type animalDespawnObserver struct {
+	world.NopHandler
+	living bool
+}
+
+// HandleEntityDespawn records whether the removed actor retains living state.
+func (h *animalDespawnObserver) HandleEntityDespawn(_ *world.Tx, e world.Entity) {
+	_, h.living = e.(Living)
+}
+
+func TestAnimalInvisibilityDespawnAndFractionalFire(t *testing.T) {
+	w := world.Config{Synchronous: true, Entities: DefaultRegistry}.New()
+	defer w.Close()
+	h := &animalDespawnObserver{}
+	w.Handle(h)
+	w.Do(func(tx *world.Tx) {
+		a := tx.AddEntity(NewCow(world.EntitySpawnOpts{Position: mgl64.Vec3{0, 10, 0}})).(*Animal)
+		a.AddEffect(effect.New(effect.Invisibility, 1, time.Minute))
+		visibility, ok := any(a).(interface{ Invisible() bool })
+		if !ok || !visibility.Invisible() {
+			t.Error("invisibility effect has no metadata visibility")
+		}
+		a.SetOnFire(2025 * time.Millisecond)
+		for range 41 {
+			a.Tick(tx, 1)
+		}
+		if a.Health() >= 10 {
+			t.Error("fractional fire duration caused no burning damage")
+		}
+		a.Close()
+		if !h.living {
+			t.Error("despawn callback lost living wrapper")
+		}
+	})
+}

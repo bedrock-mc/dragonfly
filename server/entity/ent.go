@@ -183,7 +183,7 @@ func (e *Ent) tick(tx *world.Tx, current int64) bool {
 // Close closes the Ent and removes the associated entity from the world.
 func (e *Ent) Close() error {
 	e.once.Do(func() {
-		e.tx.RemoveEntity(e)
+		e.tx.RemoveEntity(e.handle.Type().Open(e.tx, e.handle, e.data))
 		_ = e.handle.Close()
 	})
 	return nil

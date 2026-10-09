@@ -119,23 +119,11 @@ func (t ticker) tick(tx *Tx) {
 	for _, pos := range tx.TickingChunks() {
 		w.chunks[pos].lastTick = tick
 	}
-	// Clear first: generation handlers may load more columns while populating.
-	generated := make([]ChunkPos, 0)
-	for pos, c := range w.chunks {
-		if c.generated {
-			c.generated = false
-			generated = append(generated, pos)
-		}
-	}
-	slices.SortFunc(generated, compareChunkPos)
-	if h, ok := w.Handler().(GenerationHandler); ok {
-		for _, pos := range generated {
-			h.HandleChunkGenerate(tx, pos)
-		}
-	}
+	t.dispatchGeneration(tx)
 	if h, ok := w.Handler().(TickHandler); ok {
 		h.HandleTick(tx, tick)
 	}
+	t.dispatchGeneration(tx)
 	t.tickEntities(tx, tick)
 	w.scheduledUpdates.tick(tx, tick)
 	t.tickBlocksRandomly(tx, loaders, tick)
@@ -189,6 +177,9 @@ func (t ticker) tickBlocksRandomly(tx *Tx, loaders []*Loader, tick int64) {
 	}
 
 	for pos, c := range tx.World().chunks {
+		if c.generated {
+			continue
+		}
 		if !t.anyWithinDistance(pos, loaded, r) {
 			// No loaders in this chunk that are within the simulation distance, so proceed to the next.
 			continue
@@ -254,7 +245,7 @@ func (t ticker) tickEntities(tx *Tx, tick int64) {
 		chunkPos := chunkPosFromVec3(handle.data.Pos)
 
 		c, ok := tx.World().chunks[chunkPos]
-		if !ok {
+		if !ok || c.generated {
 			continue
 		}
 
@@ -420,6 +411,30 @@ func (queue *scheduledTickQueue) add(ticks []scheduledTick) {
 			queue.furthestTicks[index] = max(existing, t.t)
 		} else {
 			queue.furthestTicks[index] = t.t
+		}
+	}
+}
+
+// dispatchGeneration initialises every column admitted by owner callbacks before
+// simulation. Clearing each batch first prevents duplicate callbacks on reentry.
+func (t ticker) dispatchGeneration(tx *Tx) {
+	w := tx.World()
+	for {
+		generated := make([]ChunkPos, 0)
+		for pos, c := range w.chunks {
+			if c.generated {
+				c.generated = false
+				generated = append(generated, pos)
+			}
+		}
+		if len(generated) == 0 {
+			return
+		}
+		slices.SortFunc(generated, compareChunkPos)
+		if h, ok := w.Handler().(GenerationHandler); ok {
+			for _, pos := range generated {
+				h.HandleChunkGenerate(tx, pos)
+			}
 		}
 	}
 }

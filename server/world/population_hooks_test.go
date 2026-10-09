@@ -55,3 +55,24 @@ func TestPopulationHooksWithSharedSettings(t *testing.T) {
 		t.Fatalf("shared-settings world skipped simulation callbacks: ticks=%v generated=%v", h.ticks, h.generated)
 	}
 }
+
+// generatingTickObserver admits another column from the owner tick callback.
+type generatingTickObserver struct{ populationObserver }
+
+// HandleTick loads a fresh column after the initial generation snapshot.
+func (h *generatingTickObserver) HandleTick(tx *Tx, tick int64) {
+	h.populationObserver.HandleTick(tx, tick)
+	tx.Block(cube.Pos{16, 0, 0})
+}
+
+func TestGenerationCallbackForColumnAdmittedByTickHandler(t *testing.T) {
+	w := Config{Synchronous: true}.New()
+	defer w.Close()
+	h := &generatingTickObserver{}
+	w.Handle(h)
+	w.Do(func(tx *Tx) { tx.Block(cube.Pos{0, 0, 0}) })
+	w.AdvanceTick()
+	if len(h.generated) != 2 {
+		t.Fatalf("tick-admitted column reached simulation without generation initialization: generated=%v", h.generated)
+	}
+}

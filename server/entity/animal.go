@@ -84,6 +84,7 @@ func (t animalType) DecodeNBT(m map[string]any, data *world.EntityData) {
 		data.Age = time.Duration(age)
 	}
 	restoreAnimalEffects(m, b)
+	b.fireElapsed = min(max(time.Duration(nbtconv.Int64(m, "BurnElapsed")), 0), time.Second)
 	if v, ok := m["Health"]; ok {
 		health := float64(nbtconv.Float32(map[string]any{"Health": v}, "Health"))
 		maximum := float64(nbtconv.Float32(m, "MaxHealth"))
@@ -108,7 +109,7 @@ func (t animalType) EncodeNBT(data *world.EntityData) map[string]any {
 	b := data.Data.(*animalState)
 	return map[string]any{
 		"BabyUntil": int64(b.babyUntil),
-		"AnimalAge": int64(data.Age), "Effects": encodeAnimalEffects(b),
+		"AnimalAge": int64(data.Age), "Effects": encodeAnimalEffects(b), "BurnElapsed": int64(b.fireElapsed),
 		"Surface": boolByte(b.surface), "NaturalSpawn": boolByte(b.natural),
 		"Health": float32(b.health.Health()), "MaxHealth": float32(b.health.MaxHealth()),
 		"MovementSpeed": b.speed, "DeathAge": int64(b.deathAge),

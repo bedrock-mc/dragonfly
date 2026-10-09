@@ -27,6 +27,8 @@ type animalState struct {
 	speed                 float64
 	immuneUntil, deathAge time.Duration
 	lastDamage            float64
+	fireElapsed           time.Duration
+	extinguished          bool
 }
 
 // state returns the living state attached to the persistent actor handle.
@@ -126,6 +128,24 @@ func (a *Animal) RemoveEffect(e effect.Type) { a.state().effects.Remove(e, a); a
 // Effects returns the active effect snapshot.
 func (a *Animal) Effects() []effect.Effect { return a.state().effects.Effects() }
 
+// Invisible reports the visibility supplied by active potion effects.
+func (a *Animal) Invisible() bool { _, ok := a.state().effects.Effect(effect.Invisibility); return ok }
+
+// SetOnFire starts or extends burning without resetting an active damage interval.
+func (a *Animal) SetOnFire(d time.Duration) {
+	b := a.state()
+	if d <= 0 {
+		b.fireElapsed = 0
+		b.extinguished = true
+	} else if a.OnFireDuration() <= 0 {
+		b.fireElapsed = 0
+	}
+	a.Ent.SetOnFire(d)
+}
+
+// Extinguish ends burning and discards its pending damage interval.
+func (a *Animal) Extinguish() { a.SetOnFire(0) }
+
 // Baby reports whether the animal is still growing.
 func (a *Animal) Baby() bool { return a.Age() < a.state().babyUntil }
 
@@ -149,14 +169,20 @@ func (a *Animal) Tick(tx *world.Tx, tick int64) {
 		b.effects.Tick(a, tx)
 	}
 	baby := a.Baby()
+	burning := a.OnFireDuration() > 0
+	b.extinguished = false
 	if a.Ent.tick(tx, tick) {
 		return
 	}
-	if !a.Dead() && a.OnFireDuration() > 0 {
+	if !a.Dead() && burning && !b.extinguished {
 		if tx.RainingAt(cube.PosFromVec3(a.Position())) {
 			a.Extinguish()
-		} else if a.OnFireDuration()%time.Second == 0 {
-			a.Hurt(1, block.FireDamageSource{})
+		} else {
+			b.fireElapsed += time.Second / 20
+			if b.fireElapsed >= time.Second {
+				b.fireElapsed -= time.Second
+				a.Hurt(1, block.FireDamageSource{})
+			}
 		}
 	}
 	if baby && !a.Baby() {
