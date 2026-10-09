@@ -48,8 +48,13 @@ func (t animalType) EncodeEntity() string { return t.name }
 // BBox returns the adult species collision bounds in feet space.
 func (t animalType) BBox(e world.Entity) cube.BBox {
 	scale := 1.0
-	if a, ok := e.(*Animal); ok {
+	switch a := e.(type) {
+	case *Animal:
 		scale = a.Scale()
+	case *Ent:
+		if b, ok := a.data.Data.(*animalState); ok && a.Age() < b.babyUntil {
+			scale = .5
+		}
 	}
 	half := t.width * scale / 2
 	return cube.Box(-half, 0, -half, half, t.height*scale, half)
@@ -90,7 +95,7 @@ func (t animalType) DecodeNBT(m map[string]any, data *world.EntityData) {
 		}
 		b.health = NewHealthManager(max(health, 0), maximum)
 	}
-	if speed := nbtconv.Float64(m, "MovementSpeed"); speed > 0 && !math.IsInf(speed, 0) {
+	if speed, ok := m["MovementSpeed"].(float64); ok && speed >= 0 && !math.IsNaN(speed) && !math.IsInf(speed, 0) {
 		b.speed = speed
 	}
 	b.babyUntil = time.Duration(nbtconv.Int64(m, "BabyUntil"))
@@ -139,8 +144,8 @@ func restoreAnimalEffects(m map[string]any, b *animalState) {
 			continue
 		}
 		level := int(nbtconv.Int32(d, "Level"))
-		duration := time.Duration(nbtconv.Int64(d, "Duration"))
-		if level <= 0 || duration < 0 {
+		duration := max(time.Duration(nbtconv.Int64(d, "Duration")), 0)
+		if level <= 0 {
 			continue
 		}
 		e := effect.New(lasting, level, duration)

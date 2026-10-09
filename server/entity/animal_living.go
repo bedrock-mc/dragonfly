@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/df-mc/dragonfly/server/block"
+	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/entity/effect"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/go-gl/mathgl/mgl64"
@@ -145,6 +146,13 @@ func (a *Animal) Tick(tx *world.Tx, tick int64) {
 	}
 	baby := a.Baby()
 	a.Ent.Tick(tx, tick)
+	if !a.Dead() && a.OnFireDuration() > 0 {
+		if tx.RainingAt(cube.PosFromVec3(a.Position())) {
+			a.Extinguish()
+		} else if a.OnFireDuration()%time.Second == 0 {
+			a.Hurt(1, block.FireDamageSource{})
+		}
+	}
 	if baby && !a.Baby() {
 		a.updateState()
 	}
@@ -163,5 +171,31 @@ func (a *Animal) Explode(src world.ExplosionSource, impact float64) {
 func (b *animalState) Tick(e *Ent, tx *world.Tx) *Movement {
 	m := b.movement.TickMovement(&Animal{Ent: e}, e.data.Pos, e.data.Vel, e.data.Rot, tx)
 	e.data.Pos, e.data.Vel = m.Position(), m.Velocity()
+	if !(&Animal{Ent: e}).Dead() {
+		(&Animal{Ent: e}).checkInsiders(tx)
+	}
 	return m
+}
+
+// checkInsiders dispatches environmental contacts through the living wrapper.
+// Portal contacts are dispatched once by Ent's terminal travel handling.
+func (a *Animal) checkInsiders(tx *world.Tx) {
+	box := a.H().Type().BBox(a).Translate(a.Position()).Grow(-.0001)
+	for pos := range cube.Range3D(cube.PosFromVec3(box.Min()), cube.PosFromVec3(box.Max())) {
+		b := tx.Block(pos)
+		if _, portal := b.(portalBlock); portal {
+			continue
+		}
+		if inside, ok := b.(block.EntityInsider); ok {
+			inside.EntityInside(pos, tx, a)
+			if _, liquid := b.(world.Liquid); liquid {
+				continue
+			}
+		}
+		if liquid, ok := tx.Liquid(pos); ok {
+			if inside, ok := liquid.(block.EntityInsider); ok {
+				inside.EntityInside(pos, tx, a)
+			}
+		}
+	}
 }
