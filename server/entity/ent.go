@@ -65,12 +65,14 @@ func (e *Ent) Velocity() mgl64.Vec3 {
 // that axis in blocks/tick.
 func (e *Ent) SetVelocity(v mgl64.Vec3) {
 	e.data.Vel = v
+	e.tx.MarkEntityModified(e)
 }
 
 // Teleport teleports the entity to the position given.
 func (e *Ent) Teleport(pos mgl64.Vec3) {
 	viewers := e.tx.Viewers(e.data.Pos)
 	e.data.Pos = pos
+	e.tx.MarkEntityModified(e)
 	for _, v := range viewers {
 		v.ViewEntityTeleport(e, pos)
 	}
@@ -98,6 +100,7 @@ func (e *Ent) SetOnFire(duration time.Duration) {
 	stateChanged := (e.data.FireDuration > 0) != (duration > 0)
 
 	e.data.FireDuration = duration
+	e.tx.MarkEntityModified(e)
 	if stateChanged {
 		e.updateState()
 	}
@@ -136,6 +139,7 @@ func (e *Ent) SetAlwaysShowNameTag(alwaysShow bool) {
 
 // updateState updates the state of the entity for all viewers of the entity.
 func (e *Ent) updateState() {
+	e.tx.MarkEntityModified(e)
 	for _, v := range e.tx.Viewers(e.data.Pos) {
 		v.ViewEntityState(e)
 	}

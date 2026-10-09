@@ -332,6 +332,18 @@ func (tx *Tx) RemoveEntity(e Entity) *EntityHandle {
 	return tx.World().removeEntity(e, tx)
 }
 
+// MarkEntityModified marks the resident owning column dirty after serialized
+// entity state changes. Entities outside this transaction's world are ignored.
+func (tx *Tx) MarkEntityModified(e Entity) {
+	tx.rejectDetached()
+	w := tx.World()
+	if pos, ok := w.entities[e.H()]; ok {
+		if c := w.chunks[pos]; c != nil {
+			c.modified = true
+		}
+	}
+}
+
 // EntitiesWithin returns an iterator that yields all entities contained within
 // the cube.BBox passed.
 func (tx *Tx) EntitiesWithin(box cube.BBox) iter.Seq[Entity] {

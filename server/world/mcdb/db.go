@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/df-mc/dragonfly/server/block/cube"
@@ -23,11 +24,12 @@ import (
 // DB implements a world provider for the Minecraft world format, which
 // is based on a leveldb database.
 type DB struct {
-	conf Config
-	ldb  *leveldb.DB
-	dir  string
-	ldat *leveldat.Data
-	set  *world.Settings
+	storeMu sync.Mutex
+	conf    Config
+	ldb     *leveldb.DB
+	dir     string
+	ldat    *leveldat.Data
+	set     *world.Settings
 }
 
 // Open creates a new provider reading and writing from/to files under the path
@@ -358,6 +360,8 @@ func (db *DB) scheduledUpdates(k dbKey) ([]chunk.ScheduledBlockUpdate, int64, er
 // StoreColumn stores a world.Column at a position and dimension in the DB. An
 // error is returned if storing was unsuccessful.
 func (db *DB) StoreColumn(pos world.ChunkPos, dim world.Dimension, col *chunk.Column) error {
+	db.storeMu.Lock()
+	defer db.storeMu.Unlock()
 	k := dbKey{pos: pos, dim: dim}
 	if err := db.storeColumn(k, col); err != nil {
 		return fmt.Errorf("store column %v (%v): %w", pos, dim, err)
@@ -439,13 +443,21 @@ func (db *DB) storeEntities(batch *leveldb.Batch, k dbKey, entities []chunk.Enti
 			continue
 		}
 		batch.Put(entityIndex(e.ID), b)
+		batch.Put(entityOwnerIndex(e.ID), idsKey)
 		newIDs = append(newIDs, e.ID)
 	}
 
 	// Remove entities that are no longer referenced.
 	for _, uniqueID := range previousIDs {
 		if !slices.Contains(newIDs, uniqueID) {
-			batch.Delete(entityIndex(uniqueID))
+			// Another column may already have saved this actor after movement.
+			// Legacy actors have no owner key until their next save; retain their
+			// payload rather than deleting data whose remaining references are unknown.
+			owner, err := db.ldb.Get(entityOwnerIndex(uniqueID), nil)
+			if err == nil && bytes.Equal(owner, idsKey) {
+				batch.Delete(entityIndex(uniqueID))
+				batch.Delete(entityOwnerIndex(uniqueID))
+			}
 		}
 	}
 	if len(entities) == 0 {
@@ -461,6 +473,12 @@ func (db *DB) storeEntities(batch *leveldb.Batch, k dbKey, entities []chunk.Enti
 
 	// Remove old entity data for this chunk.
 	batch.Delete(k.Sum(keyEntitiesOld))
+}
+
+// entityOwnerIndex stores the last authoritative saved column for an actor.
+// Keeping this separate preserves the standard actor NBT and index formats.
+func entityOwnerIndex(id int64) []byte {
+	return binary.LittleEndian.AppendUint64([]byte("dragonfly:actor_owner:"), uint64(id))
 }
 
 func entityIndex(id int64) []byte {

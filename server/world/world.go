@@ -1396,7 +1396,7 @@ func (w *World) loadChunk(pos ChunkPos) (*chunk.Column, error) {
 		}
 		ch := chunk.New(w.conf.Blocks, w.Range())
 		w.conf.Generator.GenerateChunk(pos, ch)
-		column = &chunk.Column{Chunk: ch}
+		column = &chunk.Column{Chunk: ch, Generated: true}
 	}
 	chunk.LightArea([]*chunk.Chunk{column.Chunk}, int(pos[0]), int(pos[1])).Fill()
 	return column, nil
@@ -1574,6 +1574,7 @@ func (w *World) columnTo(col *Column, pos ChunkPos) *chunk.Column {
 func (w *World) columnFrom(c *chunk.Column, _ ChunkPos) *Column {
 	col := &Column{
 		Chunk:         c.Chunk,
+		modified:      c.Generated,
 		Entities:      make([]*EntityHandle, 0, len(c.Entities)),
 		BlockEntities: make(map[cube.Pos]Block, len(c.BlockEntities)),
 	}
