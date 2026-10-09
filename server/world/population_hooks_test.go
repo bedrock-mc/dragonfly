@@ -39,3 +39,19 @@ func TestPopulationHooksRunOnOwner(t *testing.T) {
 		t.Fatalf("tick callbacks = %v, want each advancing simulation tick", h.ticks)
 	}
 }
+
+func TestPopulationHooksWithSharedSettings(t *testing.T) {
+	provider := NopProvider{Set: defaultSettings()}
+	first := Config{Synchronous: true, Provider: provider}.New()
+	defer first.Close()
+	second := Config{Synchronous: true, Provider: provider, Dim: Nether}.New()
+	defer second.Close()
+	h := &populationObserver{}
+	second.Handle(h)
+	second.Do(func(tx *Tx) { tx.Block(cube.Pos{0, 0, 0}) })
+	first.AdvanceTick()
+	second.AdvanceTick()
+	if len(h.ticks) != 1 || len(h.generated) != 1 {
+		t.Fatalf("shared-settings world skipped simulation callbacks: ticks=%v generated=%v", h.ticks, h.generated)
+	}
+}

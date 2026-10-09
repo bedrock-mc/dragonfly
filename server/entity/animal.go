@@ -1,7 +1,9 @@
 package entity
 
 import (
+	"github.com/df-mc/dragonfly/server/entity/effect"
 	"math"
+	"reflect"
 	"time"
 
 	"github.com/df-mc/dragonfly/server/block/cube"
@@ -73,6 +75,10 @@ func (t animalType) Apply(data *world.EntityData) {
 func (t animalType) DecodeNBT(m map[string]any, data *world.EntityData) {
 	t.Apply(data)
 	b := data.Data.(*animalState)
+	if age, ok := m["AnimalAge"].(int64); ok && age >= 0 {
+		data.Age = time.Duration(age)
+	}
+	restoreAnimalEffects(m, b)
 	if v, ok := m["Health"]; ok {
 		health := float64(nbtconv.Float32(map[string]any{"Health": v}, "Health"))
 		maximum := float64(nbtconv.Float32(m, "MaxHealth"))
@@ -97,8 +103,56 @@ func (t animalType) EncodeNBT(data *world.EntityData) map[string]any {
 	b := data.Data.(*animalState)
 	return map[string]any{
 		"BabyUntil": int64(b.babyUntil),
-		"Surface":   boolByte(b.surface), "NaturalSpawn": boolByte(b.natural),
+		"AnimalAge": int64(data.Age), "Effects": encodeAnimalEffects(b),
+		"Surface": boolByte(b.surface), "NaturalSpawn": boolByte(b.natural),
 		"Health": float32(b.health.Health()), "MaxHealth": float32(b.health.MaxHealth()),
 		"MovementSpeed": b.speed, "DeathAge": int64(b.deathAge),
+	}
+}
+
+// encodeAnimalEffects preserves lasting modifiers and their remaining durations.
+func encodeAnimalEffects(b *animalState) []map[string]any {
+	entries := make([]map[string]any, 0, len(b.effects.Effects()))
+	for _, e := range b.effects.Effects() {
+		id, ok := effect.ID(e.Type())
+		if !ok {
+			continue
+		}
+		entries = append(entries, map[string]any{"ID": int32(id), "Level": int32(e.Level()), "Duration": int64(e.Duration()), "Ambient": boolByte(e.Ambient()), "Infinite": boolByte(e.Infinite()), "Hidden": boolByte(e.ParticlesHidden())})
+	}
+	return entries
+}
+
+// restoreAnimalEffects restores already-applied modifiers without starting them twice.
+func restoreAnimalEffects(m map[string]any, b *animalState) {
+	for _, entry := range nbtconv.Slice(m, "Effects") {
+		d, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		typ, ok := effect.ByID(int(nbtconv.Int32(d, "ID")))
+		if !ok {
+			continue
+		}
+		lasting, ok := typ.(effect.LastingType)
+		if !ok {
+			continue
+		}
+		level := int(nbtconv.Int32(d, "Level"))
+		duration := time.Duration(nbtconv.Int64(d, "Duration"))
+		if level <= 0 || duration < 0 {
+			continue
+		}
+		e := effect.New(lasting, level, duration)
+		if nbtconv.Bool(d, "Ambient") {
+			e = effect.NewAmbient(lasting, level, duration)
+		}
+		if nbtconv.Bool(d, "Infinite") {
+			e = effect.NewInfinite(lasting, level)
+		}
+		if nbtconv.Bool(d, "Hidden") {
+			e = e.WithoutParticles()
+		}
+		b.effects.effects[reflect.TypeOf(typ)] = e
 	}
 }

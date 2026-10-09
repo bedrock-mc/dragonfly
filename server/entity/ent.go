@@ -137,7 +137,7 @@ func (e *Ent) SetAlwaysShowNameTag(alwaysShow bool) {
 // updateState updates the state of the entity for all viewers of the entity.
 func (e *Ent) updateState() {
 	for _, v := range e.tx.Viewers(e.data.Pos) {
-		v.ViewEntityState(e)
+		v.ViewEntityState(e.handle.Type().Open(e.tx, e.handle, e.data))
 	}
 }
 

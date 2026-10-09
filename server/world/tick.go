@@ -116,27 +116,25 @@ func (t ticker) tick(tx *Tx) {
 		w.tickLightning(tx)
 	}
 
-	if w.advance {
-		for _, pos := range tx.TickingChunks() {
-			w.chunks[pos].lastTick = tick
+	for _, pos := range tx.TickingChunks() {
+		w.chunks[pos].lastTick = tick
+	}
+	// Clear first: generation handlers may load more columns while populating.
+	generated := make([]ChunkPos, 0)
+	for pos, c := range w.chunks {
+		if c.generated {
+			c.generated = false
+			generated = append(generated, pos)
 		}
-		// Clear first: generation handlers may load more columns while populating.
-		generated := make([]ChunkPos, 0)
-		for pos, c := range w.chunks {
-			if c.generated {
-				c.generated = false
-				generated = append(generated, pos)
-			}
+	}
+	slices.SortFunc(generated, compareChunkPos)
+	if h, ok := w.Handler().(GenerationHandler); ok {
+		for _, pos := range generated {
+			h.HandleChunkGenerate(tx, pos)
 		}
-		slices.SortFunc(generated, compareChunkPos)
-		if h, ok := w.Handler().(GenerationHandler); ok {
-			for _, pos := range generated {
-				h.HandleChunkGenerate(tx, pos)
-			}
-		}
-		if h, ok := w.Handler().(TickHandler); ok {
-			h.HandleTick(tx, tick)
-		}
+	}
+	if h, ok := w.Handler().(TickHandler); ok {
+		h.HandleTick(tx, tick)
 	}
 	t.tickEntities(tx, tick)
 	w.scheduledUpdates.tick(tx, tick)

@@ -4,6 +4,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/df-mc/dragonfly/server/block"
 	"github.com/df-mc/dragonfly/server/entity/effect"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/go-gl/mathgl/mgl64"
@@ -74,6 +75,9 @@ func (a *Animal) Hurt(v float64, src world.DamageSource) (float64, bool) {
 	b := a.state()
 	if _, ok := b.effects.Effect(effect.FireResistance); ok && src.Fire() {
 		return 0, false
+	}
+	if res, ok := b.effects.Effect(effect.Resistance); ok {
+		v *= effect.Resistance.Multiplier(src, res.Level())
 	}
 	damage := v
 	if a.Age() < b.immuneUntil {
@@ -151,13 +155,13 @@ func (a *Animal) Explode(src world.ExplosionSource, impact float64) {
 	if impact <= 0 {
 		return
 	}
-	a.Hurt((impact*impact+impact)*7, ExplosionDamageSource{Source: src})
+	a.Hurt(block.ExplosionDamage(src.Size(), impact), ExplosionDamageSource{Source: src})
 	a.KnockBack(src.Position(), impact, impact)
 }
 
 // Tick moves the persistent actor using the world's block collision system.
 func (b *animalState) Tick(e *Ent, tx *world.Tx) *Movement {
-	m := b.movement.TickMovement(e, e.data.Pos, e.data.Vel, e.data.Rot, tx)
+	m := b.movement.TickMovement(&Animal{Ent: e}, e.data.Pos, e.data.Vel, e.data.Rot, tx)
 	e.data.Pos, e.data.Vel = m.Position(), m.Velocity()
 	return m
 }
