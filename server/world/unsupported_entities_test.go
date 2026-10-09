@@ -4,7 +4,6 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/df-mc/dragonfly/server/block"
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/df-mc/dragonfly/server/world/chunk"
@@ -28,8 +27,12 @@ func TestUnsupportedEntitiesSurviveWorldSave(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := world.Config{Provider: db, Entities: world.EntityRegistryConfig{}.New(nil), Synchronous: true}.New()
+	stone, ok := world.DefaultBlockRegistry.BlockByName("minecraft:stone", nil)
+	if !ok {
+		t.Fatal("default registry has no stone block")
+	}
 	w.Do(func(tx *world.Tx) {
-		tx.SetBlock(cube.Pos{0, 4, 0}, block.Stone{}, nil)
+		tx.SetBlock(cube.Pos{0, 4, 0}, stone, nil)
 		for e := range tx.Entities() {
 			t.Errorf("unsupported actor became live: %s", e.H().Type().EncodeEntity())
 		}
@@ -49,7 +52,7 @@ func TestUnsupportedEntitiesSurviveWorldSave(t *testing.T) {
 	if !reflect.DeepEqual(got.Entities, actors) {
 		t.Fatalf("saved unsupported actors = %#v, want %#v", got.Entities, actors)
 	}
-	if got.Chunk.Block(0, 4, 0, 0) != world.DefaultBlockRegistry.BlockRuntimeID(block.Stone{}) {
+	if got.Chunk.Block(0, 4, 0, 0) != world.DefaultBlockRegistry.BlockRuntimeID(stone) {
 		t.Fatal("ordinary terrain edit was not saved")
 	}
 }
