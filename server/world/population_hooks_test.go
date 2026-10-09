@@ -2,7 +2,10 @@ package world
 
 import (
 	"github.com/df-mc/dragonfly/server/block/cube"
+	"github.com/df-mc/dragonfly/server/world/chunk"
+	"math/rand/v2"
 	"testing"
+	"time"
 )
 
 // populationObserver observes callbacks without relying on wall-clock ticking.
@@ -74,5 +77,65 @@ func TestGenerationCallbackForColumnAdmittedByTickHandler(t *testing.T) {
 	w.AdvanceTick()
 	if len(h.generated) != 2 {
 		t.Fatalf("tick-admitted column reached simulation without generation initialization: generated=%v", h.generated)
+	}
+}
+
+// generationScheduledBlock observes initialization before scheduled simulation.
+type generationScheduledBlock struct{ initialized, ticked *bool }
+
+// ScheduledTick records the generation state observed by block simulation.
+func (b generationScheduledBlock) ScheduledTick(cube.Pos, *Tx, *rand.Rand) {
+	*b.ticked = *b.initialized
+}
+
+// EncodeBlock identifies the test block in its owning registry.
+func (generationScheduledBlock) EncodeBlock() (string, map[string]any) {
+	return "test:generation_scheduled", nil
+}
+
+// Hash returns the test block's unique registry key.
+func (generationScheduledBlock) Hash() (uint64, uint64) { return 1 << 42, 0 }
+
+// Model returns the test block's unused collision model.
+func (generationScheduledBlock) Model() BlockModel { return nil }
+
+// scheduledColumnGenerator supplies a scheduled block in a previously unloaded column.
+type scheduledColumnGenerator struct {
+	NopGenerator
+	rid uint32
+}
+
+// GenerateChunk places the test block at the scheduled position.
+func (g scheduledColumnGenerator) GenerateChunk(_ ChunkPos, c *chunk.Chunk) {
+	c.SetBlock(0, 10, 0, 0, g.rid)
+}
+
+// scheduledGenerationObserver records initialization of the scheduled column.
+type scheduledGenerationObserver struct {
+	NopHandler
+	initialized *bool
+}
+
+// HandleChunkGenerate marks the target column initialized before its block ticks.
+func (h scheduledGenerationObserver) HandleChunkGenerate(_ *Tx, pos ChunkPos) {
+	if pos == (ChunkPos{5, 5}) {
+		*h.initialized = true
+	}
+}
+
+func TestScheduledTickInitializesFreshColumn(t *testing.T) {
+	initialized, ticked := false, false
+	b := generationScheduledBlock{&initialized, &ticked}
+	registry := NewBlockRegistry()
+	registry.RegisterBlockState(BlockState{Name: "test:generation_scheduled", Properties: map[string]any{}})
+	registry.RegisterBlock(b)
+	registry.Finalize()
+	w := Config{Synchronous: true, Blocks: registry, Generator: scheduledColumnGenerator{rid: registry.BlockRuntimeID(b)}}.New()
+	defer w.Close()
+	w.Handle(scheduledGenerationObserver{initialized: &initialized})
+	w.Do(func(tx *Tx) { tx.ScheduleBlockUpdate(cube.Pos{80, 10, 80}, b, time.Second/20) })
+	w.AdvanceTick()
+	if !ticked {
+		t.Fatal("scheduled block simulated before generation initialization")
 	}
 }

@@ -139,7 +139,7 @@ func (t ticker) performNeighbourUpdates(tx *Tx) {
 
 	for _, update := range updates {
 		pos, changedNeighbour := update.pos, update.neighbour
-		if ticker, ok := tx.Block(pos).(NeighbourUpdateTicker); ok {
+		if ticker, ok := t.simulationBlock(tx, pos).(NeighbourUpdateTicker); ok {
 			ticker.NeighbourUpdateTick(pos, changedNeighbour, tx)
 		}
 		if liquid, ok := tx.additionalLiquid(pos); ok {
@@ -347,7 +347,7 @@ func (queue *scheduledTickQueue) tick(tx *Tx, tick int64) {
 		if t.t > tick {
 			continue
 		}
-		b := tx.Block(t.pos)
+		b := (ticker{}).simulationBlock(tx, t.pos)
 		if ticker, ok := b.(ScheduledTicker); ok && w.conf.Blocks.BlockHash(b) == t.bhash {
 			ticker.ScheduledTick(t.pos, tx, w.r)
 		} else if liquid, ok := tx.additionalLiquid(t.pos); ok && w.conf.Blocks.BlockHash(liquid) == t.bhash {
@@ -437,4 +437,15 @@ func (t ticker) dispatchGeneration(tx *Tx) {
 			}
 		}
 	}
+}
+
+// simulationBlock initialises a newly admitted column before returning its block
+// for simulation. The callback may change the block, so read it again afterward.
+func (t ticker) simulationBlock(tx *Tx, pos cube.Pos) Block {
+	b := tx.Block(pos)
+	if c := tx.World().chunks[chunkPosFromBlockPos(pos)]; c != nil && c.generated {
+		t.dispatchGeneration(tx)
+		b = tx.Block(pos)
+	}
+	return b
 }

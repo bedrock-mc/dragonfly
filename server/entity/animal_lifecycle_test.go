@@ -263,3 +263,68 @@ func TestAnimalInvisibilityDespawnAndFractionalFire(t *testing.T) {
 		}
 	})
 }
+
+func TestAnimalPeriodicEffectsRetainPulseProgress(t *testing.T) {
+	for name, typ := range map[string]effect.LastingType{"regeneration": effect.Regeneration, "poison": effect.Poison, "wither": effect.Wither} {
+		t.Run(name, func(t *testing.T) {
+			w := world.Config{Synchronous: true, Entities: DefaultRegistry}.New()
+			defer w.Close()
+			w.Do(func(tx *world.Tx) {
+				a := tx.AddEntity(NewCow(world.EntitySpawnOpts{Position: mgl64.Vec3{0, 10, 0}})).(*Animal)
+				a.Hurt(3, VoidDamageSource{})
+				a.AddEffect(effect.New(typ, 1, time.Minute))
+				a.state().effects.Tick(a, tx)
+				encoded, err := nbt.Marshal(CowType.EncodeNBT(a.data))
+				if err != nil {
+					t.Fatal(err)
+				}
+				var m map[string]any
+				if err = nbt.Unmarshal(encoded, &m); err != nil {
+					t.Fatal(err)
+				}
+				data := world.EntityData{}
+				CowType.DecodeNBT(m, &data)
+				restored := &Animal{Ent: Open(tx, a.H(), &data)}
+				// Let damage immunity expire in both copies without advancing the effect.
+				a.data.Age += time.Second
+				restored.data.Age += time.Second
+				a.state().effects.Tick(a, tx)
+				restored.state().effects.Tick(restored, tx)
+				if a.Health() != restored.Health() {
+					t.Fatalf("reopening changed periodic pulse: uninterrupted=%v reopened=%v", a.Health(), restored.Health())
+				}
+			})
+		})
+	}
+}
+
+func TestAnimalDamageImmunitySurvivesReopening(t *testing.T) {
+	w := world.Config{Synchronous: true, Entities: DefaultRegistry}.New()
+	defer w.Close()
+	w.Do(func(tx *world.Tx) {
+		a := tx.AddEntity(NewCow(world.EntitySpawnOpts{Position: mgl64.Vec3{0, 10, 0}})).(*Animal)
+		a.data.Age = time.Hour
+		a.Hurt(3, AttackDamageSource{})
+		encoded, err := nbt.Marshal(CowType.EncodeNBT(a.data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var m map[string]any
+		if err = nbt.Unmarshal(encoded, &m); err != nil {
+			t.Fatal(err)
+		}
+		data := world.EntityData{}
+		CowType.DecodeNBT(m, &data)
+		restored := &Animal{Ent: Open(tx, a.H(), &data)}
+		if n, _ := restored.Hurt(3, AttackDamageSource{}); n != 0 {
+			t.Fatalf("equal attack bypassed saved immunity: %v", n)
+		}
+		if n, _ := restored.Hurt(4, AttackDamageSource{}); n != 1 {
+			t.Fatalf("stronger attack lost prior damage: %v", n)
+		}
+		restored.data.Age += time.Second / 2
+		if n, _ := restored.Hurt(3, AttackDamageSource{}); n != 3 {
+			t.Fatalf("saved immunity did not expire in simulation time: %v", n)
+		}
+	})
+}

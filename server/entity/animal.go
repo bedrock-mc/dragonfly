@@ -102,6 +102,10 @@ func (t animalType) DecodeNBT(m map[string]any, data *world.EntityData) {
 	b.babyUntil = time.Duration(nbtconv.Int64(m, "BabyUntil"))
 	b.surface, b.natural = nbtconv.Bool(m, "Surface"), nbtconv.Bool(m, "NaturalSpawn")
 	b.deathAge = time.Duration(nbtconv.Int64(m, "DeathAge"))
+	b.immuneUntil = time.Duration(nbtconv.Int64(m, "ImmuneUntil"))
+	if damage, ok := m["LastDamage"].(float64); ok && damage >= 0 && !math.IsNaN(damage) && !math.IsInf(damage, 0) {
+		b.lastDamage = damage
+	}
 }
 
 // EncodeNBT serialises living state alongside the world's position and UUID data.
@@ -113,6 +117,7 @@ func (t animalType) EncodeNBT(data *world.EntityData) map[string]any {
 		"Surface": boolByte(b.surface), "NaturalSpawn": boolByte(b.natural),
 		"Health": float32(b.health.Health()), "MaxHealth": float32(b.health.MaxHealth()),
 		"MovementSpeed": b.speed, "DeathAge": int64(b.deathAge),
+		"ImmuneUntil": int64(b.immuneUntil), "LastDamage": b.lastDamage,
 	}
 }
 
@@ -124,7 +129,7 @@ func encodeAnimalEffects(b *animalState) []map[string]any {
 		if !ok {
 			continue
 		}
-		entries = append(entries, map[string]any{"ID": int32(id), "Level": int32(e.Level()), "Duration": int64(e.Duration()), "Ambient": boolByte(e.Ambient()), "Infinite": boolByte(e.Infinite()), "Hidden": boolByte(e.ParticlesHidden())})
+		entries = append(entries, map[string]any{"ID": int32(id), "Level": int32(e.Level()), "Duration": int64(e.Duration()), "ElapsedTicks": int64(e.Tick()), "Ambient": boolByte(e.Ambient()), "Infinite": boolByte(e.Infinite()), "Hidden": boolByte(e.ParticlesHidden())})
 	}
 	return entries
 }
@@ -159,6 +164,6 @@ func restoreAnimalEffects(m map[string]any, b *animalState) {
 		if nbtconv.Bool(d, "Hidden") {
 			e = e.WithoutParticles()
 		}
-		b.effects.effects[reflect.TypeOf(typ)] = e
+		b.effects.effects[reflect.TypeOf(typ)] = e.WithElapsedTicks(int(nbtconv.Int64(d, "ElapsedTicks")))
 	}
 }
