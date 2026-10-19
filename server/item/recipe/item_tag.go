@@ -1,21 +1,22 @@
 package recipe
 
 import (
-	_ "embed"
-	"encoding/json"
 	"slices"
+
+	vanilla "github.com/cinnabar-mc/protocolgen/generated/data/item"
 )
 
-var (
-	//go:embed item_tags.json
-	itemTagData []byte
-	itemTags    = make(map[string][]string)
-)
+var itemTags = vanillaItemTags()
 
-func init() {
-	if err := json.Unmarshal(itemTagData, &itemTags); err != nil {
-		panic(err)
+// vanillaItemTags indexes the shared catalog's item memberships by recipe tag.
+func vanillaItemTags() map[string][]string {
+	tags := make(map[string][]string)
+	for _, item := range vanilla.RuntimeItems() {
+		for _, tag := range vanilla.RuntimeTags(item.Name) {
+			tags[tag] = append(tags[tag], item.Name)
+		}
 	}
+	return tags
 }
 
 // ItemTag represents a recipe item that is identified by a tag, such as "minecraft:planks" or
