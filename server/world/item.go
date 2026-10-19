@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 
+	vanilla "github.com/cinnabar-mc/protocolgen/generated/data/item"
 	"github.com/df-mc/dragonfly/server/item/category"
 	"github.com/sandertv/gophertunnel/minecraft/nbt"
 	"image"
@@ -103,8 +104,8 @@ func init() {
 	for name, e := range vanillaItemEntries {
 		itemNamesToRuntimeIDs[name] = e.RuntimeID
 		itemRuntimeIDsToNames[e.RuntimeID] = name
-		if size, ok := vanillaStackSizes[name]; ok {
-			e.MaxStackSize = size
+		if definition, ok := vanilla.LookupRuntime(name); ok {
+			e.MaxStackSize = definition.MaxCount
 			vanillaItemEntries[name] = e
 		}
 	}
