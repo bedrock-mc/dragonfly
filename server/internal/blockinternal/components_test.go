@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/df-mc/dragonfly/server/block"
+	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/block/customblock"
 	"github.com/df-mc/dragonfly/server/item"
 	"github.com/df-mc/dragonfly/server/world"
@@ -406,5 +407,29 @@ func TestBuilder_PermutationsKeepTheirOrder(t *testing.T) {
 	}
 	if permutations[1]["components"].(map[string]any)["again"] != true {
 		t.Errorf("the repeated condition's components went elsewhere: %v", permutations)
+	}
+}
+
+// activatableBlock is a custom block that handles being used.
+type activatableBlock struct{ untaggedBlock }
+
+func (activatableBlock) Activate(cube.Pos, cube.Face, *world.Tx, item.User, *item.UseContext) bool {
+	return true
+}
+
+// A block that handles being used declares a player-interact handler, so the client uses it
+// rather than predicting the held block placed against it; one that does not declares none.
+func TestComponents_ActivatableDeclaresPlayerInteract(t *testing.T) {
+	components := Components("test:activatable", activatableBlock{}, 10000)["components"].(map[string]any)
+	custom, ok := components["minecraft:custom_components"].(map[string]any)
+	if !ok {
+		t.Fatal("activatable block has no custom_components component")
+	}
+	if custom["hasPlayerInteract"] != uint8(1) {
+		t.Fatalf("hasPlayerInteract = %v, want 1", custom["hasPlayerInteract"])
+	}
+	plain := Components("test:untagged", untaggedBlock{}, 10000)["components"].(map[string]any)
+	if _, ok := plain["minecraft:custom_components"]; ok {
+		t.Fatal("a block without Activate declares custom_components")
 	}
 }

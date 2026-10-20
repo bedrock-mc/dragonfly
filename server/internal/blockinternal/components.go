@@ -44,6 +44,14 @@ func Components(identifier string, b world.CustomBlock, blockID int32) map[strin
 		}
 		builder.AddComponent("minecraft:destructible_by_mining", map[string]any{"value": float32(seconds)})
 	}
+	if _, ok := b.(block.Activatable); ok {
+		// A declared player-interact handler makes the client use the block rather than place the
+		// held block against it, as it does for the vanilla blocks that open a screen.
+		builder.AddComponent("minecraft:custom_components", map[string]any{
+			"hasPlayerInteract": uint8(1),
+			"hasPlayerPlacing":  uint8(0),
+		})
+	}
 	if frictional, ok := b.(block.Frictional); ok {
 		builder.AddComponent("minecraft:friction", map[string]any{"value": float32(frictional.Friction())})
 	}
