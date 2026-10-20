@@ -40,6 +40,10 @@ func init() {
 	// TODO: (28) Bad omen. (Requires villages ...)
 	// TODO: (29) Hero of the village. (Requires villages ...)
 	Register(30, Darkness)
+	Register(32, WindCharged)
+	Register(33, Weaving)
+	Register(34, Oozing)
+	Register(35, Infested)
 }
 
 var (
