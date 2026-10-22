@@ -72,9 +72,9 @@ type Config struct {
 	// ChunkLoadsPerTick is the maximum number of chunks requested for each
 	// player per tick. Values of zero or less select the default of 4.
 	ChunkLoadsPerTick int
-	// MaxChunkTransactions is the maximum number of chunk transactions awaiting
-	// a response from each client with the blob cache enabled. Values of zero
-	// or less select the default of 8.
+	// MaxChunkTransactions stops new chunk requests for a client with the blob
+	// cache enabled while this many chunk transactions await its response.
+	// Values of zero or less select the default of 8.
 	MaxChunkTransactions int
 	// JoinMessage, QuitMessage and ShutdownMessage are the messages to send for
 	// when a player joins or quits the server and when the server shuts down,

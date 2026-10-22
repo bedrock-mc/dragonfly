@@ -163,9 +163,9 @@ type Config struct {
 	// ChunkLoadsPerTick is the maximum number of chunks requested for the
 	// player each tick. Values of zero or less select the default of 4.
 	ChunkLoadsPerTick int
-	// MaxChunkTransactions is the maximum number of chunk transactions awaiting
-	// a response from a client with the blob cache enabled. Values of zero or
-	// less select the default of 8.
+	// MaxChunkTransactions stops new chunk requests for a client with the blob
+	// cache enabled while this many chunk transactions await its response.
+	// Values of zero or less select the default of 8.
 	MaxChunkTransactions int
 
 	EmoteChatMuted bool
