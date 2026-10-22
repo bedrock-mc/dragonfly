@@ -161,10 +161,11 @@ type Config struct {
 
 	MaxChunkRadius int
 	// ChunkLoadsPerTick is the maximum number of chunks requested for the
-	// player each tick. It defaults to 4.
+	// player each tick. Values of zero or less select the default of 4.
 	ChunkLoadsPerTick int
 	// MaxChunkTransactions is the maximum number of chunk transactions awaiting
-	// a response from a client with the blob cache enabled. It defaults to 8.
+	// a response from a client with the blob cache enabled. Values of zero or
+	// less select the default of 8.
 	MaxChunkTransactions int
 
 	EmoteChatMuted bool
@@ -509,10 +510,13 @@ func (s *Session) sendChunks(tx *world.Tx, c Controllable) {
 		})
 	}
 
-	s.blobMu.Lock()
-	toLoad := s.conf.MaxChunkTransactions - len(s.openChunkTransactions)
-	s.blobMu.Unlock()
-	s.chunkLoader.Load(tx, min(toLoad, s.conf.ChunkLoadsPerTick))
+	toLoad := s.conf.ChunkLoadsPerTick
+	if s.conn.ClientCacheEnabled() {
+		s.blobMu.Lock()
+		toLoad = min(toLoad, s.conf.MaxChunkTransactions-len(s.openChunkTransactions))
+		s.blobMu.Unlock()
+	}
+	s.chunkLoader.Load(tx, toLoad)
 }
 
 // handleWorldSwitch handles the player of the Session switching worlds.
